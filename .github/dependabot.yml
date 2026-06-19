@@ -2,8 +2,9 @@ version: 2
 
 # Laetoli Data — multi-package monorepo (each package self-contained with its
 # own package.json + lockfile, NOT npm workspaces). Dependabot needs one npm
-# entry per package directory. Updates batched weekly and grouped per package
-# to keep PR volume low.
+# entry per package directory. Updates batched weekly and grouped per package.
+# MAJOR bumps are ignored (handled by hand) so Dependabot never proposes
+# breaking majors that fail CI / preview builds; only safe minor+patch flow.
 updates:
   # ---- npm: one entry per self-contained package ----------------------------
   - package-ecosystem: npm
@@ -13,8 +14,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       auth-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /storage
@@ -23,8 +27,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       storage-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /realtime
@@ -33,8 +40,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       realtime-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /admin
@@ -43,8 +53,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       admin-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /functions
@@ -53,8 +66,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       functions-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /backup
@@ -63,8 +79,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       backup-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /cli
@@ -73,8 +92,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       cli-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /client
@@ -83,8 +105,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       client-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /studio
@@ -93,8 +118,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       studio-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   # ---- GitHub Actions used by the workflows ---------------------------------
   - package-ecosystem: github-actions
@@ -103,5 +131,4 @@ updates:
       interval: weekly
     groups:
       actions-deps:
-        patterns:
-          - "*"
+        patterns: ['*']
