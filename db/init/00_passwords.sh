@@ -32,6 +32,8 @@ LAETOLI_REALTIME_PASSWORD="${LAETOLI_REALTIME_PASSWORD:-$POSTGRES_PASSWORD}"
 LAETOLI_ADMIN_PASSWORD="${LAETOLI_ADMIN_PASSWORD:-$POSTGRES_PASSWORD}"
 # webhooks worker (:9993) holds a dedicated LISTEN session as laetoli_webhooks.
 LAETOLI_WEBHOOKS_PASSWORD="${LAETOLI_WEBHOOKS_PASSWORD:-$POSTGRES_PASSWORD}"
+# scheduler worker (:9992) connects AS laetoli_scheduler (member of laetoli_admin → runs job SQL).
+LAETOLI_SCHEDULER_PASSWORD="${LAETOLI_SCHEDULER_PASSWORD:-$POSTGRES_PASSWORD}"
 
 psql -v ON_ERROR_STOP=1 \
      --username "$POSTGRES_USER" \
@@ -41,7 +43,8 @@ psql -v ON_ERROR_STOP=1 \
      --set=laetoli_storage_pw="$LAETOLI_STORAGE_PASSWORD" \
      --set=laetoli_realtime_pw="$LAETOLI_REALTIME_PASSWORD" \
      --set=laetoli_admin_pw="$LAETOLI_ADMIN_PASSWORD" \
-     --set=laetoli_webhooks_pw="$LAETOLI_WEBHOOKS_PASSWORD" <<-'EOSQL'
+     --set=laetoli_webhooks_pw="$LAETOLI_WEBHOOKS_PASSWORD" \
+     --set=laetoli_scheduler_pw="$LAETOLI_SCHEDULER_PASSWORD" <<-'EOSQL'
 	DROP ROLE IF EXISTS authenticator;
 	CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD :'authenticator_pw';
 
@@ -61,6 +64,11 @@ psql -v ON_ERROR_STOP=1 \
 
 	DROP ROLE IF EXISTS laetoli_webhooks;
 	CREATE ROLE laetoli_webhooks LOGIN NOINHERIT PASSWORD :'laetoli_webhooks_pw';
+
+	-- INHERIT so it picks up laetoli_admin's privileges (granted in 0008_scheduler.sql)
+	-- to run registered kind=sql jobs.
+	DROP ROLE IF EXISTS laetoli_scheduler;
+	CREATE ROLE laetoli_scheduler LOGIN INHERIT PASSWORD :'laetoli_scheduler_pw';
 EOSQL
 
-echo "00_passwords.sh: authenticator + laetoli_auth + laetoli_storage + laetoli_realtime + laetoli_admin_login + laetoli_webhooks passwords set."
+echo "00_passwords.sh: authenticator + laetoli_auth + laetoli_storage + laetoli_realtime + laetoli_admin_login + laetoli_webhooks + laetoli_scheduler passwords set."

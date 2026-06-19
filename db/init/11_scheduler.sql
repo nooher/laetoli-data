@@ -1,0 +1,12 @@
+-- =============================================================================
+-- 11_scheduler.sql — bring up the scheduler schema on a FRESH database boot.
+-- -----------------------------------------------------------------------------
+-- Single source of truth: includes the canonical migration so a brand-new
+-- `docker compose up` ships scheduled jobs (jobs + runs tables + the
+-- laetoli_scheduler worker role) out of the box. Existing databases get the
+-- same SQL through `laetoli-data migrate` (db/migrations/0008_scheduler.sql).
+--
+-- Runs after 10_webhooks.sql and after 00_passwords.sh created the
+-- laetoli_scheduler LOGIN role with its password.
+-- =============================================================================
+\i /migrations/0008_scheduler.sql

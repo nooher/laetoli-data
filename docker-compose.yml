@@ -164,6 +164,28 @@ services:
     expose:
       - "9993"
 
+  scheduler:
+    build:
+      context: ./scheduler
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SCHEDULER_PORT: "9992"
+      SCHEDULER_TICK_MS: ${SCHEDULER_TICK_MS:-30000}
+      SCHEDULER_ADMIN_KEY: ${SCHEDULER_ADMIN_KEY:-}
+      # Connects AS laetoli_scheduler (member of laetoli_admin — runs job SQL).
+      DATABASE_URL: postgres://laetoli_scheduler:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: laetoli_scheduler
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "9992"
+
   admin:
     build:
       context: ./admin
@@ -261,6 +283,7 @@ services:
       - studio
       - functions
       - webhooks
+      - scheduler
 
 volumes:
   pgdata:
