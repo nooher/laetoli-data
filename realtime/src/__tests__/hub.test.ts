@@ -4,6 +4,8 @@ import {
   matchesFilter,
   parseNotification,
   recipientsFor,
+  broadcastRecipients,
+  PresenceRegistry,
   type Notification,
   type SubscriberView,
 } from '../hub.js';
@@ -28,7 +30,8 @@ describe('Hub — subscribe / acks', () => {
     const c = new FakeClient();
     hub.add(c, CLAIMS);
     hub.handleMessage(c, JSON.stringify({ type: 'subscribe', channel: 'notes', event: '*' }));
-    expect(c.last).toEqual({ type: 'subscribed', channel: 'notes' });
+    // subscribe acks with `subscribed`, then a presence `sync` snapshot follows.
+    expect(c.messages).toContainEqual({ type: 'subscribed', channel: 'notes' });
     expect(hub.subscriptionCount()).toBe(1);
   });
 
@@ -37,7 +40,7 @@ describe('Hub — subscribe / acks', () => {
     const c = new FakeClient();
     hub.add(c, CLAIMS);
     hub.handleMessage(c, JSON.stringify({ type: 'subscribe', channel: 'notes' }));
-    expect(c.last?.type).toBe('subscribed');
+    expect(c.messages.map((m) => m.type)).toContain('subscribed');
     hub.dispatch(note({ type: 'DELETE', record: null, old: { id: '1', user_id: 'u1' } }));
     expect(c.changes).toHaveLength(1);
   });
@@ -450,5 +453,225 @@ describe('parseNotification', () => {
       JSON.stringify({ schema: 'public', table: 'notes', type: 'UPDATE', record: { id: '1' }, old: null, truncated: true }),
     );
     expect(n?.truncated).toBe(true);
+  });
+});
+
+describe('broadcastRecipients — pure', () => {
+  it('excludes the sender by default', () => {
+    const a = {}, b = {}, c = {};
+    expect(broadcastRecipients([a, b, c], a)).toEqual([b, c]);
+  });
+
+  it('echoes to the sender when echoSelf=true', () => {
+    const a = {}, b = {};
+    expect(broadcastRecipients([a, b], a, true)).toEqual([a, b]);
+  });
+
+  it('handles a sender that is not in the subscriber list', () => {
+    const a = {}, b = {}, outsider = {};
+    expect(broadcastRecipients([a, b], outsider)).toEqual([a, b]);
+  });
+
+  it('returns empty when the only subscriber is the sender', () => {
+    const a = {};
+    expect(broadcastRecipients([a], a)).toEqual([]);
+  });
+});
+
+describe('PresenceRegistry — pure', () => {
+  it('tracks and snapshots a presence', () => {
+    const reg = new PresenceRegistry<object>();
+    const c = {};
+    const entry = reg.track('room', c, 'u1', { name: 'Ada' });
+    expect(entry.sub).toBe('u1');
+    expect(reg.snapshot('room')).toEqual([{ ref: entry.ref, sub: 'u1', state: { name: 'Ada' } }]);
+    expect(reg.has('room', c)).toBe(true);
+  });
+
+  it('assigns a stable ref per connection across channels', () => {
+    const reg = new PresenceRegistry<object>();
+    const c = {};
+    const r1 = reg.track('a', c, 'u1', {}).ref;
+    const r2 = reg.track('b', c, 'u1', {}).ref;
+    expect(r1).toBe(r2);
+  });
+
+  it('untrack removes one channel and reports whether it removed', () => {
+    const reg = new PresenceRegistry<object>();
+    const c = {};
+    reg.track('room', c, 'u1', {});
+    expect(reg.untrack('room', c)).toBe(true);
+    expect(reg.untrack('room', c)).toBe(false);
+    expect(reg.snapshot('room')).toEqual([]);
+  });
+
+  it('removeConnection clears all channels and lists them', () => {
+    const reg = new PresenceRegistry<object>();
+    const c = {};
+    reg.track('a', c, 'u1', {});
+    reg.track('b', c, 'u1', {});
+    expect(reg.removeConnection(c).sort()).toEqual(['a', 'b']);
+    expect(reg.snapshot('a')).toEqual([]);
+    expect(reg.snapshot('b')).toEqual([]);
+  });
+
+  it('keeps separate entries per connection, even same sub', () => {
+    const reg = new PresenceRegistry<object>();
+    const c1 = {}, c2 = {};
+    reg.track('room', c1, 'u1', { tab: 1 });
+    reg.track('room', c2, 'u1', { tab: 2 });
+    expect(reg.snapshot('room')).toHaveLength(2);
+  });
+});
+
+describe('Hub — broadcast (ephemeral relay)', () => {
+  it('relays a broadcast to OTHER subscribers, not the sender', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, CLAIMS);
+    hub.add(b, { sub: 'u2', role: 'authenticated' });
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(a, JSON.stringify({ type: 'broadcast', channel: 'room', event: 'cursor', payload: { x: 1 } }));
+    expect(b.broadcasts).toHaveLength(1);
+    expect(b.broadcasts[0]).toMatchObject({ channel: 'room', event: 'cursor', payload: { x: 1 }, from: 'u1' });
+    expect(a.broadcasts).toHaveLength(0); // sender excluded by default
+  });
+
+  it('echoes to the sender when broadcastSelf=true', () => {
+    const hub = new Hub(undefined, true);
+    const a = new FakeClient();
+    hub.add(a, CLAIMS);
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(a, JSON.stringify({ type: 'broadcast', channel: 'room', event: 'ping', payload: 1 }));
+    expect(a.broadcasts).toHaveLength(1);
+  });
+
+  it('ignores owner-RLS — broadcast reaches every channel subscriber', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, { sub: 'u1', role: 'authenticated' });
+    hub.add(b, { sub: 'u2', role: 'authenticated' });
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(a, JSON.stringify({ type: 'broadcast', channel: 'room', event: 'e', payload: 'x' }));
+    expect(b.broadcasts).toHaveLength(1);
+  });
+
+  it('does not relay to subscribers of a different channel', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, CLAIMS);
+    hub.add(b, CLAIMS);
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'other' }));
+    hub.handleMessage(a, JSON.stringify({ type: 'broadcast', channel: 'room', event: 'e', payload: 1 }));
+    expect(b.broadcasts).toHaveLength(0);
+  });
+
+  it('errors on a broadcast missing channel or event', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    hub.add(a, CLAIMS);
+    hub.handleMessage(a, JSON.stringify({ type: 'broadcast', event: 'e', payload: 1 }));
+    expect(a.last?.type).toBe('error');
+    hub.handleMessage(a, JSON.stringify({ type: 'broadcast', channel: 'room', payload: 1 }));
+    expect(a.last?.type).toBe('error');
+  });
+});
+
+describe('Hub — presence', () => {
+  it('sends a presence sync (empty) right after subscribe', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    hub.add(a, CLAIMS);
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    expect(a.presences).toHaveLength(1);
+    expect(a.presences[0]).toMatchObject({ channel: 'room', event: 'sync', presences: [] });
+  });
+
+  it('track announces a join to all channel subscribers including the tracker', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, { sub: 'u1', role: 'authenticated' });
+    hub.add(b, { sub: 'u2', role: 'authenticated' });
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(a, JSON.stringify({ type: 'presence_track', channel: 'room', state: { name: 'Ada' } }));
+    // both A and B should see a join frame showing A's presence
+    const aJoin = a.presences.filter((p) => p.event === 'join');
+    const bJoin = b.presences.filter((p) => p.event === 'join');
+    expect(aJoin).toHaveLength(1);
+    expect(bJoin).toHaveLength(1);
+    expect((bJoin[0].presences as unknown[])).toHaveLength(1);
+    expect((bJoin[0].presences as Array<Record<string, unknown>>)[0]).toMatchObject({ sub: 'u1', state: { name: 'Ada' } });
+  });
+
+  it('a late subscriber gets the current roster in its sync', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, { sub: 'u1', role: 'authenticated' });
+    hub.add(b, { sub: 'u2', role: 'authenticated' });
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(a, JSON.stringify({ type: 'presence_track', channel: 'room', state: { name: 'Ada' } }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    const bSync = b.presences.find((p) => p.event === 'sync');
+    expect((bSync?.presences as unknown[])).toHaveLength(1);
+  });
+
+  it('untrack announces a leave', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, { sub: 'u1', role: 'authenticated' });
+    hub.add(b, { sub: 'u2', role: 'authenticated' });
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(a, JSON.stringify({ type: 'presence_track', channel: 'room', state: {} }));
+    hub.handleMessage(a, JSON.stringify({ type: 'presence_untrack', channel: 'room' }));
+    const bLeave = b.presences.filter((p) => p.event === 'leave');
+    expect(bLeave).toHaveLength(1);
+    expect((bLeave[0].presences as unknown[])).toHaveLength(0);
+  });
+
+  it('disconnect (remove) announces a leave to remaining subscribers', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, { sub: 'u1', role: 'authenticated' });
+    hub.add(b, { sub: 'u2', role: 'authenticated' });
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(a, JSON.stringify({ type: 'presence_track', channel: 'room', state: {} }));
+    hub.remove(a);
+    const bLeave = b.presences.filter((p) => p.event === 'leave');
+    expect(bLeave).toHaveLength(1);
+    expect((bLeave.at(-1)!.presences as unknown[])).toHaveLength(0);
+  });
+
+  it('unsubscribe also drops presence with a leave', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, { sub: 'u1', role: 'authenticated' });
+    hub.add(b, { sub: 'u2', role: 'authenticated' });
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'room' }));
+    hub.handleMessage(a, JSON.stringify({ type: 'presence_track', channel: 'room', state: {} }));
+    hub.handleMessage(a, JSON.stringify({ type: 'unsubscribe', channel: 'room' }));
+    expect(b.presences.filter((p) => p.event === 'leave')).toHaveLength(1);
+  });
+
+  it('errors on presence_track without a channel', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    hub.add(a, CLAIMS);
+    hub.handleMessage(a, JSON.stringify({ type: 'presence_track', state: {} }));
+    expect(a.last?.type).toBe('error');
   });
 });

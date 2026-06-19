@@ -7,9 +7,15 @@ export type { ObjectMeta, BucketMeta, UploadOptions, StorageBody } from './objec
 export { RealtimeClient, RealtimeChannel, deriveWsUrl } from './realtime';
 export type {
   RealtimeEvent,
+  RealtimeChangeEvent,
   RealtimeFilter,
   RealtimeChange,
   RealtimeCallback,
+  RealtimeBroadcast,
+  RealtimePresence,
+  RealtimePresenceEvent,
+  BroadcastCallback,
+  PresenceCallback,
   RealtimeOptions,
 } from './realtime';
 export { FunctionsClient } from './functions';

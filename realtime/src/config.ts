@@ -15,6 +15,11 @@ export interface RealtimeConfig {
    * ['user_id','owner']. Override via REALTIME_OWNER_COLUMNS (comma-separated).
    */
   ownerColumns: string[];
+  /**
+   * When true, a client's own broadcasts are echoed back to itself in addition
+   * to the other channel subscribers. Default false. Set REALTIME_BROADCAST_SELF=true.
+   */
+  broadcastSelf: boolean;
   // Postgres connection: prefer DATABASE_URL, else POSTGRES_* parts.
   // The realtime service connects AS the dedicated `laetoli_realtime` role.
   databaseUrl?: string;
@@ -67,6 +72,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RealtimeConfig
     channel: env.REALTIME_CHANNEL ?? 'laetoli_realtime',
     authGraceMs: Number.parseInt(env.REALTIME_AUTH_GRACE_MS ?? '5000', 10),
     ownerColumns: ownerColumns.length > 0 ? ownerColumns : ['user_id', 'owner'],
+    broadcastSelf: (env.REALTIME_BROADCAST_SELF ?? '').toLowerCase() === 'true',
     // REALTIME_DATABASE_URL lets the realtime service use its own role/DSN;
     // falls back to the shared DATABASE_URL if not set.
     databaseUrl: env.REALTIME_DATABASE_URL ?? env.DATABASE_URL,

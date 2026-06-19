@@ -213,3 +213,77 @@ describe('RealtimeClient — unsubscribe + reconnect', () => {
     expect(MockWebSocket.instances.length).toBe(count);
   });
 });
+
+describe('RealtimeChannel — broadcast', () => {
+  it('send() emits a broadcast frame on the channel', () => {
+    const { client } = newClient('abc');
+    const ch = client.channel('room').subscribe();
+    sock().open();
+    ch.send({ event: 'cursor', payload: { x: 10 } });
+    expect(sock().frames).toContainEqual({
+      type: 'broadcast',
+      channel: 'room',
+      event: 'cursor',
+      payload: { x: 10 },
+    });
+  });
+
+  it('delivers an inbound broadcast to .on("broadcast") listeners', () => {
+    const { client } = newClient('abc');
+    const cb = vi.fn();
+    client.channel('room').on('broadcast', cb).subscribe();
+    sock().open();
+    sock().message({ type: 'broadcast', channel: 'room', event: 'typing', payload: { who: 'u2' }, from: 'u2' });
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb.mock.calls[0][0]).toEqual({ channel: 'room', event: 'typing', payload: { who: 'u2' }, from: 'u2' });
+  });
+
+  it('does not deliver broadcasts to a different channel', () => {
+    const { client } = newClient('abc');
+    const cb = vi.fn();
+    client.channel('room').on('broadcast', cb).subscribe();
+    client.channel('other').subscribe();
+    sock().open();
+    sock().message({ type: 'broadcast', channel: 'other', event: 'e', payload: 1 });
+    expect(cb).not.toHaveBeenCalled();
+  });
+});
+
+describe('RealtimeChannel — presence', () => {
+  it('track() sends a presence_track frame', () => {
+    const { client } = newClient('abc');
+    const ch = client.channel('room').subscribe();
+    sock().open();
+    ch.track({ name: 'Ada' });
+    expect(sock().frames).toContainEqual({ type: 'presence_track', channel: 'room', state: { name: 'Ada' } });
+  });
+
+  it('untrack() sends a presence_untrack frame', () => {
+    const { client } = newClient('abc');
+    const ch = client.channel('room').subscribe();
+    sock().open();
+    ch.untrack();
+    expect(sock().frames).toContainEqual({ type: 'presence_untrack', channel: 'room' });
+  });
+
+  it('delivers presence events and records presenceState()', () => {
+    const { client } = newClient('abc');
+    const cb = vi.fn();
+    const ch = client.channel('room').on('presence', cb).subscribe();
+    sock().open();
+    const presences = [{ ref: 'c1', sub: 'u1', state: { name: 'Ada' } }];
+    sock().message({ type: 'presence', channel: 'room', event: 'join', presences });
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb.mock.calls[0][0]).toEqual({ channel: 'room', event: 'join', presences });
+    expect(ch.presenceState()).toEqual(presences);
+  });
+
+  it('normalizes an unknown presence event to sync and missing presences to []', () => {
+    const { client } = newClient('abc');
+    const cb = vi.fn();
+    client.channel('room').on('presence', cb).subscribe();
+    sock().open();
+    sock().message({ type: 'presence', channel: 'room', event: 'weird' });
+    expect(cb.mock.calls[0][0]).toEqual({ channel: 'room', event: 'sync', presences: [] });
+  });
+});

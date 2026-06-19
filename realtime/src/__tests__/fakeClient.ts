@@ -19,4 +19,14 @@ export class FakeClient implements SendTarget {
   get changes(): Record<string, unknown>[] {
     return this.messages.filter((m) => m.type === 'change');
   }
+
+  /** Only `broadcast` frames received. */
+  get broadcasts(): Record<string, unknown>[] {
+    return this.messages.filter((m) => m.type === 'broadcast');
+  }
+
+  /** Only `presence` frames received. */
+  get presences(): Record<string, unknown>[] {
+    return this.messages.filter((m) => m.type === 'presence');
+  }
 }

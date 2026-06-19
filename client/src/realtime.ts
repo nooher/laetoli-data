@@ -13,11 +13,40 @@
 //   // ...later
 //   ch.unsubscribe();
 
-export type RealtimeEvent = '*' | 'INSERT' | 'UPDATE' | 'DELETE';
+/** DB-change events. */
+export type RealtimeChangeEvent = '*' | 'INSERT' | 'UPDATE' | 'DELETE';
+/**
+ * The full event union a listener can register for: DB-change events plus the
+ * two ephemeral, DB-independent realtime channels — 'broadcast' and 'presence'.
+ */
+export type RealtimeEvent = RealtimeChangeEvent | 'broadcast' | 'presence';
 
 export interface RealtimeFilter {
   column: string;
   value: unknown;
+}
+
+/** A relayed broadcast message delivered to a 'broadcast' listener. */
+export interface RealtimeBroadcast {
+  channel: string;
+  event: string;
+  payload: unknown;
+  /** JWT `sub` of the sender, when the server includes it. */
+  from?: string;
+}
+
+/** A single presence entry as reported by the server. */
+export interface RealtimePresence {
+  ref: string;
+  sub: string;
+  state: Record<string, unknown>;
+}
+
+/** A presence frame delivered to a 'presence' listener. */
+export interface RealtimePresenceEvent {
+  channel: string;
+  event: 'sync' | 'join' | 'leave';
+  presences: RealtimePresence[];
 }
 
 /** Payload delivered to a channel listener. */
@@ -30,6 +59,8 @@ export interface RealtimeChange {
 }
 
 export type RealtimeCallback = (payload: RealtimeChange) => void;
+export type BroadcastCallback = (payload: RealtimeBroadcast) => void;
+export type PresenceCallback = (payload: RealtimePresenceEvent) => void;
 
 type WsCtor = new (url: string) => WebSocket;
 
@@ -43,7 +74,7 @@ export interface RealtimeOptions {
 }
 
 interface Listener {
-  event: RealtimeEvent;
+  event: RealtimeChangeEvent;
   cb: RealtimeCallback;
   filter?: RealtimeFilter;
 }
@@ -60,6 +91,9 @@ export function deriveWsUrl(httpBase: string): string {
 
 export class RealtimeChannel {
   private listeners: Listener[] = [];
+  private broadcastListeners: BroadcastCallback[] = [];
+  private presenceListeners: PresenceCallback[] = [];
+  private lastPresences: RealtimePresence[] = [];
   private subscribed = false;
 
   constructor(
@@ -67,12 +101,56 @@ export class RealtimeChannel {
     private readonly client: RealtimeClient,
   ) {}
 
-  /** Register a listener. Chainable, supabase-style. */
-  on(event: RealtimeEvent, cb: RealtimeCallback, filter?: RealtimeFilter): this {
-    this.listeners.push({ event, cb, filter });
+  /**
+   * Register a listener. Chainable, supabase-style.
+   *
+   *   .on('INSERT'|'UPDATE'|'DELETE'|'*', cb, filter?)  → DB-change rows
+   *   .on('broadcast', cb)                              → relayed broadcasts
+   *   .on('presence', cb)                               → presence sync/join/leave
+   */
+  on(event: 'broadcast', cb: BroadcastCallback): this;
+  on(event: 'presence', cb: PresenceCallback): this;
+  on(event: RealtimeChangeEvent, cb: RealtimeCallback, filter?: RealtimeFilter): this;
+  on(
+    event: RealtimeEvent,
+    cb: RealtimeCallback | BroadcastCallback | PresenceCallback,
+    filter?: RealtimeFilter,
+  ): this {
+    if (event === 'broadcast') {
+      this.broadcastListeners.push(cb as BroadcastCallback);
+      return this;
+    }
+    if (event === 'presence') {
+      this.presenceListeners.push(cb as PresenceCallback);
+      return this;
+    }
+    this.listeners.push({ event, cb: cb as RealtimeCallback, filter });
     // If already subscribed, (re)send subscribe so a newly-added filter applies.
     if (this.subscribed) this.client._sendSubscribe(this);
     return this;
+  }
+
+  /** Send an ephemeral broadcast on this channel (relayed to other subscribers). */
+  send(message: { event: string; payload?: unknown }): this {
+    this.client._sendBroadcast(this.name, message.event, message.payload);
+    return this;
+  }
+
+  /** Announce/replace this client's presence on the channel. Chainable. */
+  track(state: Record<string, unknown> = {}): this {
+    this.client._sendPresenceTrack(this.name, state);
+    return this;
+  }
+
+  /** Stop announcing presence on this channel. Chainable. */
+  untrack(): this {
+    this.client._sendPresenceUntrack(this.name);
+    return this;
+  }
+
+  /** The last presence roster the server pushed for this channel. */
+  presenceState(): RealtimePresence[] {
+    return this.lastPresences.slice();
   }
 
   /** Open the socket (if needed) and subscribe this channel. Chainable. */
@@ -115,6 +193,29 @@ export class RealtimeChannel {
         l.cb(change);
       } catch {
         /* a listener throwing must not break the others */
+      }
+    }
+  }
+
+  /** @internal — dispatch an incoming broadcast to broadcast listeners. */
+  _emitBroadcast(b: RealtimeBroadcast): void {
+    for (const cb of this.broadcastListeners) {
+      try {
+        cb(b);
+      } catch {
+        /* isolate listener errors */
+      }
+    }
+  }
+
+  /** @internal — record the roster + dispatch a presence event. */
+  _emitPresence(p: RealtimePresenceEvent): void {
+    this.lastPresences = p.presences;
+    for (const cb of this.presenceListeners) {
+      try {
+        cb(p);
+      } catch {
+        /* isolate listener errors */
       }
     }
   }
@@ -205,6 +306,23 @@ export class RealtimeClient {
     this.send(JSON.stringify({ type: 'unsubscribe', channel: name }));
   }
 
+  /** @internal — send (or queue) an ephemeral broadcast frame. */
+  _sendBroadcast(channel: string, event: string, payload: unknown): void {
+    this.ensureConnected();
+    this.send(JSON.stringify({ type: 'broadcast', channel, event, payload }));
+  }
+
+  /** @internal — announce presence on a channel. */
+  _sendPresenceTrack(channel: string, state: Record<string, unknown>): void {
+    this.ensureConnected();
+    this.send(JSON.stringify({ type: 'presence_track', channel, state }));
+  }
+
+  /** @internal — drop presence on a channel. */
+  _sendPresenceUntrack(channel: string): void {
+    this.send(JSON.stringify({ type: 'presence_untrack', channel }));
+  }
+
   // ---- socket lifecycle ----------------------------------------------------
 
   private ensureConnected(): void {
@@ -286,6 +404,28 @@ export class RealtimeClient {
           truncated: msg.truncated === true ? true : undefined,
         };
         this.channels.get(change.channel)?._emit(change);
+        return;
+      }
+      case 'broadcast': {
+        const b: RealtimeBroadcast = {
+          channel: String(msg.channel),
+          event: String(msg.event),
+          payload: msg.payload,
+          from: typeof msg.from === 'string' ? msg.from : undefined,
+        };
+        this.channels.get(b.channel)?._emitBroadcast(b);
+        return;
+      }
+      case 'presence': {
+        const ev = msg.event;
+        const p: RealtimePresenceEvent = {
+          channel: String(msg.channel),
+          event: ev === 'join' || ev === 'leave' ? ev : 'sync',
+          presences: Array.isArray(msg.presences)
+            ? (msg.presences as RealtimePresence[])
+            : [],
+        };
+        this.channels.get(p.channel)?._emitPresence(p);
         return;
       }
       case 'subscribed':
