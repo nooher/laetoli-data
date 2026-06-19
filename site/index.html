@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Laetoli Data — Backend huru. Data yako, ardhi yako.</title>
+  <meta name="description" content="Laetoli Data: backend sovereign unaojiendesha mwenyewe — PostgreSQL + PostgREST + auth + @laetoli/data SDK. Unakimbia kwenye VPS ya Tanzania au Raspberry Pi. Apache-2.0." />
+  <meta name="theme-color" content="#0F2A1D" />
+  <meta property="og:title" content="Laetoli Data — Backend huru. Data yako, ardhi yako." />
+  <meta property="og:description" content="Sovereign self-hostable backend (Postgres + PostgREST + auth + drop-in SDK). Runs on a Tanzanian VPS or a Raspberry Pi." />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F2A1D'/%3E%3Cpath d='M9 22 L16 8 L23 22' fill='none' stroke='%23E0A93B' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='22' r='2.1' fill='%23E0A93B'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Ruka hadi yaliyomo</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Urambazaji mkuu">
+      <a class="brand" href="#top" aria-label="Laetoli Data — nyumbani">
+        <svg class="brand-mark" width="30" height="30" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="7" fill="#0F2A1D" />
+          <path d="M9 22 L16 8 L23 22" fill="none" stroke="#E0A93B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="16" cy="22" r="2.1" fill="#E0A93B" />
+        </svg>
+        <span class="brand-name">Laetoli&nbsp;Data</span>
+      </a>
+      <div class="nav-links">
+        <a href="#why">Kwa nini?</a>
+        <a href="#how">Jinsi inavyofanya kazi</a>
+        <a href="#sdk">SDK</a>
+        <a href="#deploy">Deploy</a>
+        <a class="nav-cta" href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- HERO -->
+    <section class="hero" id="top">
+      <div class="hero-inner">
+        <p class="eyebrow">Sehemu ya stack sovereign ya Laetoli</p>
+        <h1 class="hero-title">Backend huru.<br /><span class="hero-accent">Data yako, ardhi yako.</span></h1>
+        <p class="hero-sub">
+          <strong>Laetoli Data</strong> ni backend unaojiendesha mwenyewe — database, REST API, na
+          uthibitishaji — unaokimbia kwenye VPS ya Tanzania au <strong>Raspberry Pi</strong>. Miliki data
+          yako, acha kulipa ada za kila-project za SaaS.
+        </p>
+        <p class="hero-sub-en">A sovereign, self-hostable backend — Postgres + PostgREST + auth + a drop-in SDK. Open, offline-capable, Swahili-aware.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="https://github.com/nooher/laetoli-data" rel="noopener">Anza</a>
+          <a class="btn btn-ghost" href="https://github.com/nooher/laetoli-data/blob/main/DEPLOY.md" rel="noopener">Soma docs</a>
+        </div>
+        <ul class="hero-badges" aria-label="Sifa kuu">
+          <li>Apache-2.0</li>
+          <li>Zero runtime deps</li>
+          <li>Postgres + RLS</li>
+          <li>Inakimbia kwenye Pi</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- WHY -->
+    <section class="section" id="why">
+      <div class="section-head">
+        <h2>Kwa nini sovereign?</h2>
+        <p class="section-lede">Why own your backend. <span lang="en">Four reasons it matters.</span></p>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <div class="card-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v6l9 4 9-4V7"/></svg>
+          </div>
+          <h3>Data yako</h3>
+          <p>Database yako iko kwenye seva yako, Tanzania. Hakuna mtu wa tatu anayeshikilia funguo. <span lang="en" class="en">Own your data, on your own soil.</span></p>
+        </article>
+        <article class="card">
+          <div class="card-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <h3>Bila ada za kila-project</h3>
+          <p>Endesha apps nyingi kwenye seva moja. Lipa seva, sio kila mradi. <span lang="en" class="en">No per-project SaaS fees.</span></p>
+        </article>
+        <article class="card">
+          <div class="card-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
+          </div>
+          <h3>Inakimbia Raspberry Pi</h3>
+          <p>Stack nzima ndani ya kisanduku kinachoshika mkononi — "shule ndani ya kisanduku", bila internet. <span lang="en" class="en">An offline classroom in a box.</span></p>
+        </article>
+        <article class="card">
+          <div class="card-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V7a5 5 0 0 1 9.9-1"/><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M12 15v2"/></svg>
+          </div>
+          <h3>Wazi &amp; huria</h3>
+          <p>Msimbo wazi, leseni ya Apache-2.0. Stack iliyothibitishwa: PostgreSQL + PostgREST. <span lang="en" class="en">Open, Apache-2.0, built on proven tools.</span></p>
+        </article>
+      </div>
+    </section>
+
+    <!-- HOW -->
+    <section class="section section-alt" id="how">
+      <div class="section-head">
+        <h2>Jinsi inavyofanya kazi</h2>
+        <p class="section-lede">One TLS edge, two services, one database. <span lang="sw">Caddy → PostgREST + auth → Postgres + RLS.</span></p>
+      </div>
+      <div class="how-grid">
+        <div class="diagram" role="img" aria-label="Mchoro wa stack: client anatuma maombi kwa Caddy kwenye milango 80 na 443. Caddy anaelekeza /rest/ kwenda PostgREST na /auth/ kwenda huduma ya auth. Zote zinaunganishwa na PostgreSQL kupitia siri moja ya JWT, ambapo RLS inatekelezwa.">
+          <svg viewBox="0 0 460 360" xmlns="http://www.w3.org/2000/svg" class="diagram-svg" aria-hidden="true" focusable="false">
+            <!-- client -->
+            <g>
+              <rect x="170" y="14" width="120" height="44" rx="9" fill="#0F2A1D"/>
+              <text x="230" y="41" text-anchor="middle" class="d-label-light">client / app</text>
+            </g>
+            <!-- arrow client -> caddy -->
+            <line x1="230" y1="58" x2="230" y2="86" stroke="#7C8B7E" stroke-width="2"/>
+            <polygon points="230,92 225,82 235,82" fill="#7C8B7E"/>
+            <!-- caddy -->
+            <g>
+              <rect x="40" y="92" width="380" height="58" rx="11" fill="#E0A93B"/>
+              <text x="230" y="116" text-anchor="middle" class="d-label-dark d-strong">Caddy · 80 / 443 · TLS</text>
+              <text x="230" y="135" text-anchor="middle" class="d-label-dark d-small">/rest/* → PostgREST &nbsp;·&nbsp; /auth/* → Auth</text>
+            </g>
+            <!-- branch arrows -->
+            <line x1="130" y1="150" x2="130" y2="186" stroke="#7C8B7E" stroke-width="2"/>
+            <polygon points="130,192 125,182 135,182" fill="#7C8B7E"/>
+            <line x1="330" y1="150" x2="330" y2="186" stroke="#7C8B7E" stroke-width="2"/>
+            <polygon points="330,192 325,182 335,182" fill="#7C8B7E"/>
+            <!-- postgrest -->
+            <g>
+              <rect x="36" y="192" width="188" height="56" rx="10" fill="#1C4332"/>
+              <text x="130" y="214" text-anchor="middle" class="d-label-light d-strong">PostgREST</text>
+              <text x="130" y="232" text-anchor="middle" class="d-label-light d-small">:3000 · auto REST API</text>
+            </g>
+            <!-- auth -->
+            <g>
+              <rect x="236" y="192" width="188" height="56" rx="10" fill="#1C4332"/>
+              <text x="330" y="214" text-anchor="middle" class="d-label-light d-strong">Auth service</text>
+              <text x="330" y="232" text-anchor="middle" class="d-label-light d-small">:9999 · HS256 JWT</text>
+            </g>
+            <!-- jwt link -->
+            <line x1="130" y1="248" x2="130" y2="288" stroke="#7C8B7E" stroke-width="2"/>
+            <line x1="330" y1="248" x2="330" y2="288" stroke="#7C8B7E" stroke-width="2"/>
+            <polygon points="130,294 125,284 135,284" fill="#7C8B7E"/>
+            <polygon points="330,294 325,284 335,284" fill="#7C8B7E"/>
+            <text x="230" y="272" text-anchor="middle" class="d-note">shared JWT secret (HS256)</text>
+            <!-- postgres -->
+            <g>
+              <rect x="36" y="294" width="388" height="58" rx="11" fill="#0F2A1D"/>
+              <text x="230" y="317" text-anchor="middle" class="d-label-light d-strong">PostgreSQL · :5432</text>
+              <text x="230" y="336" text-anchor="middle" class="d-label-light d-small">roles: anon · authenticated · laetoli_admin &nbsp;·&nbsp; RLS via JWT sub + role</text>
+            </g>
+          </svg>
+        </div>
+        <div class="how-copy">
+          <ul class="how-list">
+            <li><strong>PostgreSQL</strong> — database. Roles <code>anon</code>, <code>authenticated</code>, <code>laetoli_admin</code>. Row-Level Security inatumia <code>sub</code> (user id) + <code>role</code> kutoka kwa JWT — mfano <em>uleule</em> wa Supabase, hivyo RLS migrations zinahamia moja kwa moja.</li>
+            <li><strong>PostgREST</strong> — REST API ya kiotomatiki juu ya Postgres. Inahakiki JWT kwa <code>PGRST_JWT_SECRET</code>.</li>
+            <li><strong>Auth service</strong> — GoTrue-equivalent nyepesi (Node/Express): signup / login (username + password, bcrypt) / sign-in <em>bila jina</em>. Inatoa HS256 JWT zenye <code>{ sub, role, exp }</code>.</li>
+            <li><strong>Caddy</strong> — TLS endpoint moja; inaelekeza <code>/rest/*</code> → PostgREST, <code>/auth/*</code> → auth.</li>
+          </ul>
+          <p class="how-note">Hatuvumbui Supabase upya — tunakusanya stack iliyothibitishwa (PostgreSQL + PostgREST) pamoja na auth nyepesi ya sovereign na SDK ya drop-in.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SDK -->
+    <section class="section" id="sdk">
+      <div class="section-head">
+        <h2>Drop-in SDK</h2>
+        <p class="section-lede">Karibu drop-in ya Supabase — badilisha import tu. <span lang="en">@laetoli/data, zero deps, pure fetch.</span></p>
+      </div>
+      <div class="code-card">
+        <div class="code-head">
+          <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+          <span class="code-file">app.ts</span>
+          <button class="copy-btn" type="button" data-copy-target="sdk-code" aria-label="Nakili msimbo">Nakili</button>
+        </div>
+<pre class="code-block"><code id="sdk-code">import { createClient } from '@laetoli/data';
+
+// Point at your Laetoli Data endpoint (VPS or a Raspberry Pi).
+const db = createClient('https://data.yangu.tz', {
+  apikey: 'optional-anon-key',
+});
+
+// Query / Hoji
+const { data, error } = await db
+  .from('works')
+  .select('id, title, author_id')
+  .eq('type', 'pulse')
+  .order('created_at', { ascending: false })
+  .limit(20);
+
+// Auth / Uthibitishaji  (username + password, or anonymous)
+await db.auth.signInWithPassword({ username: 'naim', password: '••••' });
+await db.auth.signInAnonymously();
+const { data: { user } } = await db.auth.getUser();</code></pre>
+      </div>
+      <div class="code-card code-card-diff">
+        <div class="code-head">
+          <span class="code-file">Kuhama kutoka Supabase / Migration</span>
+        </div>
+<pre class="code-block"><code><span class="diff-del">- import { createClient } from '@supabase/supabase-js';</span>
+<span class="diff-add">+ import { createClient } from '@laetoli/data';</span>
+
+<span class="diff-del">- const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);</span>
+<span class="diff-add">+ const supabase = createClient(LAETOLI_DATA_URL, { apikey: ANON_KEY });</span></code></pre>
+      </div>
+      <p class="sdk-note">Inahifadhi shapes zilezile: <code>from().select/insert/update/delete/eq/order/limit/single</code> na <code>auth.signUp/signInWithPassword/signInAnonymously/getUser/signOut</code> → <code>{ data, error }</code>. <em>Tofauti:</em> utambulisho ni <code>username</code>, sio <code>email</code>.</p>
+    </section>
+
+    <!-- DEPLOY -->
+    <section class="section section-alt" id="deploy">
+      <div class="section-head">
+        <h2>Deploy kwa hatua tatu</h2>
+        <p class="section-lede">Three steps to a running backend. <span lang="sw">Docker Compose inashughulikia kila kitu.</span></p>
+      </div>
+      <ol class="steps">
+        <li class="step">
+          <span class="step-num">1</span>
+          <div class="step-body">
+            <h3>Nakili mazingira</h3>
+            <p>Anza na faili la mazingira.</p>
+            <pre class="code-inline"><code>cp .env.example .env</code></pre>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-num">2</span>
+          <div class="step-body">
+            <h3>Weka siri</h3>
+            <p>Tengeneza <code>POSTGRES_PASSWORD</code> na <code>JWT_SECRET</code> ndefu, za nasibu.</p>
+            <pre class="code-inline"><code>echo "JWT_SECRET=$(openssl rand -base64 48)"</code></pre>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-num">3</span>
+          <div class="step-body">
+            <h3>Washa stack</h3>
+            <p>Postgres + PostgREST + Auth + Caddy, zote kwa amri moja.</p>
+            <pre class="code-inline"><code>docker compose up -d</code></pre>
+          </div>
+        </li>
+      </ol>
+      <div class="pi-note">
+        <div class="pi-note-icon" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
+        </div>
+        <div>
+          <h3>Note ya Raspberry Pi</h3>
+          <p>Picha zote ni multi-arch (<code>linux/arm64</code>). Acha <code>CADDY_DOMAIN</code> wazi kwa LAN ya HTTP-tu, <code>docker compose pull</code> mara moja ukiwa na internet, kisha stack inawaka <strong>bila internet</strong>. Apps zinaelekea kwa IP ya LAN ya Pi. Ona <a href="https://github.com/nooher/laetoli-data/blob/main/RASPBERRY_PI.md" rel="noopener">RASPBERRY_PI.md</a>.</p>
+        </div>
+      </div>
+      <div class="deploy-cta">
+        <a class="btn btn-primary" href="https://github.com/nooher/laetoli-data/blob/main/DEPLOY.md" rel="noopener">Mwongozo kamili wa VPS</a>
+        <a class="btn btn-ghost" href="https://github.com/nooher/laetoli-data/blob/main/RASPBERRY_PI.md" rel="noopener">Mwongozo wa Raspberry Pi</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <rect width="32" height="32" rx="7" fill="#1C4332" />
+          <path d="M9 22 L16 8 L23 22" fill="none" stroke="#E0A93B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="16" cy="22" r="2.1" fill="#E0A93B" />
+        </svg>
+        <span>Laetoli Data</span>
+      </div>
+      <p class="footer-tag">Backend huru. Data yako, ardhi yako.</p>
+      <nav class="footer-links" aria-label="Viungo vya chini">
+        <a href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+        <a href="https://snil.vercel.app" rel="noopener">SNIL</a>
+        <a href="https://laetoli.tz" rel="noopener">laetoli.tz</a>
+      </nav>
+      <p class="footer-legal">Laetoli Data · sehemu ya stack sovereign ya Laetoli · Apache-2.0 · © 2026 Laetoli Ltd</p>
+    </div>
+  </footer>
+
+  <script src="main.js" defer></script>
+</body>
+</html>
