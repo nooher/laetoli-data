@@ -1,0 +1,13 @@
+-- =============================================================================
+-- 10_webhooks.sql — bring up the webhooks schema on a FRESH database boot.
+-- -----------------------------------------------------------------------------
+-- Single source of truth: includes the canonical migration so a brand-new
+-- `docker compose up` ships database webhooks (endpoints + deliveries tables +
+-- the laetoli_webhooks worker role) out of the box. Existing databases get the
+-- same SQL through `laetoli-data migrate` (db/migrations/0007_webhooks.sql).
+--
+-- Runs after 05_realtime.sql (the webhooks worker consumes the same NOTIFY
+-- stream the realtime trigger publishes) and after 00_passwords.sh created the
+-- laetoli_webhooks LOGIN role with its password.
+-- =============================================================================
+\i /migrations/0007_webhooks.sql

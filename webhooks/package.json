@@ -1,0 +1,25 @@
+{
+  "name": "@laetoli/webhooks",
+  "version": "0.1.0",
+  "description": "Laetoli Data — sovereign database webhooks worker. Postgres LISTEN/NOTIFY row changes -> HTTP POST to registered endpoints, HMAC-signed, with retry/backoff + delivery logging.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@types/pg": "^8.11.6",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

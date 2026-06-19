@@ -143,6 +143,27 @@ services:
     expose:
       - "9997"
 
+  webhooks:
+    build:
+      context: ./webhooks
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WEBHOOKS_PORT: "9993"
+      WEBHOOKS_CHANNEL: laetoli_realtime
+      # Holds the dedicated Postgres LISTEN session as laetoli_webhooks.
+      DATABASE_URL: postgres://laetoli_webhooks:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: laetoli_webhooks
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "9993"
+
   admin:
     build:
       context: ./admin
@@ -239,6 +260,7 @@ services:
       - admin
       - studio
       - functions
+      - webhooks
 
 volumes:
   pgdata:
