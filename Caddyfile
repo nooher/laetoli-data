@@ -33,8 +33,22 @@
 		reverse_proxy auth:9999
 	}
 
+	# Object storage — strip /storage, forward to the storage service.
+	handle_path /storage/* {
+		reverse_proxy storage:9998
+	}
+
+	# Realtime WebSocket. The SDK connects to exactly "/realtime" (no trailing
+	# slash), so match both that and "/realtime/*". The service accepts the
+	# "/realtime" path itself, so we forward unstripped; reverse_proxy upgrades
+	# WebSocket connections automatically.
+	@realtime path /realtime /realtime/*
+	handle @realtime {
+		reverse_proxy realtime:9997
+	}
+
 	# Root health/landing.
 	handle / {
-		respond "Laetoli Data — sovereign backend. Try /rest/ and /auth/." 200
+		respond "Laetoli Data — sovereign backend. Try /rest/ /auth/ /storage/ /realtime/." 200
 	}
 }

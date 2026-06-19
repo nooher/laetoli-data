@@ -1,6 +1,8 @@
 import { AuthClient } from './auth';
 import { QueryBuilder } from './query';
 import { DEFAULT_STORAGE_KEY, resolveStorage } from './storage';
+import { StorageClient } from './objectstore';
+import { RealtimeClient, type RealtimeChannel } from './realtime';
 import type { ClientOptions } from './types';
 
 /**
@@ -10,6 +12,10 @@ import type { ClientOptions } from './types';
  */
 export class LaetoliDataClient {
   readonly auth: AuthClient;
+  /** Object storage (buckets + files) — `.storage.from(bucket).upload(...)`. */
+  readonly storage: StorageClient;
+  /** Realtime — `.realtime.channel(table)` or the `.channel(table)` shortcut. */
+  readonly realtime: RealtimeClient;
   private readonly restUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly apikey?: string;
@@ -40,6 +46,14 @@ export class LaetoliDataClient {
       storageKey,
       baseHeaders: () => this.baseHeaders(),
     });
+
+    // Object storage + realtime share the bearer/anon-key the auth client holds.
+    const token = () => this.auth.token ?? this.apikey ?? null;
+    this.storage = new StorageClient(base, token, {
+      fetch: this.fetchImpl,
+      headers: () => this.baseHeaders(),
+    });
+    this.realtime = new RealtimeClient(base, token);
   }
 
   /** Begin a PostgREST query against a table or view. */
@@ -52,6 +66,11 @@ export class LaetoliDataClient {
       },
       table,
     );
+  }
+
+  /** Subscribe to realtime changes on a table — shortcut for `.realtime.channel()`. */
+  channel(name: string): RealtimeChannel {
+    return this.realtime.channel(name);
   }
 
   /** Headers common to every request (apikey + caller extras). */

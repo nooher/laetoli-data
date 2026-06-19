@@ -6,6 +6,8 @@ dist
 pgdata
 caddy_data
 caddy_config
+storage_data
+backups
 .DS_Store
 
 .vercel

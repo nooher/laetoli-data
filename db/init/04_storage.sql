@@ -1,0 +1,13 @@
+-- =============================================================================
+-- 04_storage.sql — bring up the object-storage schema on a FRESH database boot.
+-- -----------------------------------------------------------------------------
+-- Single source of truth: this just includes the canonical migration file so a
+-- brand-new `docker compose up` ships the full storage subsystem out of the box
+-- (essential for the Raspberry Pi "just works" image). Existing databases get
+-- the same SQL through `laetoli-data migrate` (db/migrations/0001_storage.sql).
+--
+-- ./db/migrations is mounted read-only at /migrations (see docker-compose.yml).
+-- The laetoli_storage LOGIN role + password are created earlier by
+-- 00_passwords.sh; the CREATE ROLE guard inside the migration is then a no-op.
+-- =============================================================================
+\i /migrations/0001_storage.sql

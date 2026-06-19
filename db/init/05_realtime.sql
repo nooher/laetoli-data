@@ -1,0 +1,12 @@
+-- =============================================================================
+-- 05_realtime.sql — bring up the realtime schema on a FRESH database boot.
+-- -----------------------------------------------------------------------------
+-- Single source of truth: includes the canonical migration so a brand-new
+-- `docker compose up` ships realtime (NOTIFY trigger + enable() helper, and the
+-- worked example on public.notes) out of the box. Existing databases get the
+-- same SQL through `laetoli-data migrate` (db/migrations/0002_realtime.sql).
+--
+-- Runs after 03_example.sql (so public.notes exists) and after 00_passwords.sh
+-- created the laetoli_realtime LOGIN role with its password.
+-- =============================================================================
+\i /migrations/0002_realtime.sql

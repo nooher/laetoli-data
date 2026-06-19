@@ -23,17 +23,29 @@ set -euo pipefail
 
 AUTHENTICATOR_PASSWORD="${AUTHENTICATOR_PASSWORD:-$POSTGRES_PASSWORD}"
 LAETOLI_AUTH_PASSWORD="${LAETOLI_AUTH_PASSWORD:-$POSTGRES_PASSWORD}"
+# storage (:9998) + realtime (:9997) each connect AS their own LOGIN role;
+# both reuse POSTGRES_PASSWORD by convention (override if you want per-role secrets).
+LAETOLI_STORAGE_PASSWORD="${LAETOLI_STORAGE_PASSWORD:-$POSTGRES_PASSWORD}"
+LAETOLI_REALTIME_PASSWORD="${LAETOLI_REALTIME_PASSWORD:-$POSTGRES_PASSWORD}"
 
 psql -v ON_ERROR_STOP=1 \
      --username "$POSTGRES_USER" \
      --dbname "$POSTGRES_DB" \
      --set=authenticator_pw="$AUTHENTICATOR_PASSWORD" \
-     --set=laetoli_auth_pw="$LAETOLI_AUTH_PASSWORD" <<-'EOSQL'
+     --set=laetoli_auth_pw="$LAETOLI_AUTH_PASSWORD" \
+     --set=laetoli_storage_pw="$LAETOLI_STORAGE_PASSWORD" \
+     --set=laetoli_realtime_pw="$LAETOLI_REALTIME_PASSWORD" <<-'EOSQL'
 	DROP ROLE IF EXISTS authenticator;
 	CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD :'authenticator_pw';
 
 	DROP ROLE IF EXISTS laetoli_auth;
 	CREATE ROLE laetoli_auth LOGIN NOINHERIT PASSWORD :'laetoli_auth_pw';
+
+	DROP ROLE IF EXISTS laetoli_storage;
+	CREATE ROLE laetoli_storage LOGIN NOINHERIT PASSWORD :'laetoli_storage_pw';
+
+	DROP ROLE IF EXISTS laetoli_realtime;
+	CREATE ROLE laetoli_realtime LOGIN NOINHERIT PASSWORD :'laetoli_realtime_pw';
 EOSQL
 
-echo "00_passwords.sh: authenticator + laetoli_auth passwords set."
+echo "00_passwords.sh: authenticator + laetoli_auth + laetoli_storage + laetoli_realtime passwords set."
