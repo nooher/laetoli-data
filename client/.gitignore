@@ -1,0 +1,7 @@
+node_modules
+*.log
+.DS_Store
+coverage
+.vitest
+
+# dist is intentionally committed (published like @laetoli/snil) — do NOT ignore it.

@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+pgdata
+caddy_data
+caddy_config
+.DS_Store

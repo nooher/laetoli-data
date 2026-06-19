@@ -1,0 +1,59 @@
+# =============================================================================
+# Caddyfile — Laetoli Data edge / reverse proxy
+# -----------------------------------------------------------------------------
+# Routes (both site blocks share the same snippet):
+#   /rest/*  -> rest:3000  (PostgREST)   — the /rest prefix is stripped
+#   /auth/*  -> auth:9999  (auth service) — the /auth prefix is stripped
+# Plus: permissive CORS for browser clients, gzip/zstd compression.
+#
+# Two modes, chosen by the CADDY_DOMAIN env var (set in .env):
+#   * LOCAL  (CADDY_DOMAIN unset) — plain HTTP on :80, no TLS. Good for a Pi on a
+#            classroom LAN, or localhost dev (reachable via ${CADDY_HTTP:-8088}).
+#   * PROD   (CADDY_DOMAIN=data.example.tz) — Caddy gets a real cert and serves
+#            automatic HTTPS. HTTP is redirected to HTTPS by Caddy by default.
+# =============================================================================
+
+# --- shared routing + middleware --------------------------------------------
+(laetoli_routes) {
+	encode zstd gzip
+
+	# CORS for browser clients (the @laetoli/data SDK runs in the browser).
+	@cors_preflight method OPTIONS
+	header {
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+		Access-Control-Allow-Headers "Authorization, Content-Type, Prefer, Accept, Accept-Profile, Content-Profile, Range, apikey"
+		Access-Control-Expose-Headers "Content-Range, Content-Location, Location"
+		Access-Control-Max-Age "86400"
+	}
+	# Short-circuit preflight with 204.
+	respond @cors_preflight 204
+
+	# PostgREST — strip /rest, forward the rest of the path.
+	handle_path /rest/* {
+		reverse_proxy rest:3000
+	}
+
+	# Auth service — strip /auth, forward the rest of the path.
+	handle_path /auth/* {
+		reverse_proxy auth:9999
+	}
+
+	# Tiny health/landing response at the root.
+	handle / {
+		respond "Laetoli Data — sovereign backend. Try /rest/ and /auth/." 200
+	}
+}
+
+# --- LOCAL: plain HTTP on :80 (no TLS) --------------------------------------
+# Active when CADDY_DOMAIN is empty. `http://` disables automatic HTTPS.
+http:// {
+	import laetoli_routes
+}
+
+# --- PROD: automatic HTTPS for your domain ----------------------------------
+# Active only when CADDY_DOMAIN is set in .env. When it's empty this block
+# matches nothing meaningful and Caddy ignores it.
+{$CADDY_DOMAIN} {
+	import laetoli_routes
+}

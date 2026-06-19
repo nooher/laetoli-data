@@ -1,0 +1,7 @@
+node_modules
+dist
+*.log
+.env
+src/**/*.test.ts
+src/__tests__
+vitest.config.ts

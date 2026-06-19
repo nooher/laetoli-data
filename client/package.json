@@ -1,0 +1,43 @@
+{
+  "name": "@laetoli/data",
+  "version": "0.1.0",
+  "description": "Sovereign client SDK for Laetoli Data — a near drop-in replacement for the subset of the Supabase JS client used across Laetoli apps (PostgREST + lean auth).",
+  "license": "Apache-2.0",
+  "author": "Laetoli Ltd",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "laetoli",
+    "supabase",
+    "postgrest",
+    "sovereign",
+    "self-hosted",
+    "sdk"
+  ],
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

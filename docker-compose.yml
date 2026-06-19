@@ -1,0 +1,112 @@
+# =============================================================================
+# Laetoli Data — sovereign self-hostable backend
+# -----------------------------------------------------------------------------
+# Services (all images are multi-arch incl. linux/arm64 -> run on a Pi 4/5):
+#
+#   db      PostgreSQL 16. The database. On FIRST boot it runs every file in
+#           ./db/init (mounted into /docker-entrypoint-initdb.d) IN ORDER:
+#           00_passwords.sh, 01_roles.sql, 02_auth.sql, 03_example.sql.
+#           Data persists in the named volume `pgdata`. Healthcheck: pg_isready.
+#
+#   rest    PostgREST. Auto REST API over Postgres. Connects AS `authenticator`,
+#           verifies JWTs with the shared JWT_SECRET, exposes schemas in
+#           PGRST_DB_SCHEMAS with anon role PGRST_DB_ANON_ROLE. Waits for db.
+#
+#   auth    The sovereign Node/Express auth service (built from ./auth, owned by
+#           another agent). Signs HS256 JWTs with the SAME JWT_SECRET, stores
+#           users in auth.users. Connects AS `laetoli_auth`. Listens on :9999.
+#
+#   caddy   Single edge. Reverse-proxies /rest/* -> rest:3000 and
+#           /auth/* -> auth:9999, adds CORS + gzip, and does automatic HTTPS
+#           when CADDY_DOMAIN is set. Publishes ${CADDY_HTTP:-8088}:80 (+443).
+#
+# All config comes from .env (env_file + ${VAR} interpolation). Copy
+# .env.example -> .env and set POSTGRES_PASSWORD + JWT_SECRET before `up`.
+# =============================================================================
+
+name: laetoli-data
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    # Not published to the host by default — reach Postgres only via the
+    # internal network. Uncomment to expose for local psql/admin tooling.
+    # ports:
+    #   - "5432:5432"
+
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_ANON_ROLE: ${PGRST_DB_ANON_ROLE}
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS}
+      PGRST_SERVER_PORT: "3000"
+      # Open the schema cache to reload on NOTIFY (handy after migrations).
+      PGRST_DB_CHANNEL_ENABLED: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "3000"
+
+  auth:
+    build:
+      context: ./auth
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRY: ${JWT_EXPIRY}
+      PORT: "9999"
+      # The auth service connects AS laetoli_auth to read/write auth.users.
+      DATABASE_URL: postgres://laetoli_auth:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: laetoli_auth
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "9999"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:-}
+    ports:
+      - "${CADDY_HTTP:-8088}:80"
+      - "${CADDY_HTTPS:-8443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - rest
+      - auth
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
