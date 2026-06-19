@@ -4,7 +4,8 @@ import { DEFAULT_STORAGE_KEY, resolveStorage } from './storage';
 import { StorageClient } from './objectstore';
 import { RealtimeClient, type RealtimeChannel } from './realtime';
 import { FunctionsClient } from './functions';
-import type { ClientOptions } from './types';
+import { VectorClient, type MatchOptions, type MatchedDocument } from './vectors';
+import type { ClientOptions, DataResult } from './types';
 
 /**
  * The Laetoli Data client — a near drop-in for the supabase-js subset our
@@ -19,6 +20,8 @@ export class LaetoliDataClient {
   readonly realtime: RealtimeClient;
   /** Edge functions — `.functions.invoke(name, { body })`. */
   readonly functions: FunctionsClient;
+  /** Vectors / RPC — `.vectors.matchDocuments(embedding)` and `.rpc(fn, args)`. */
+  readonly vectors: VectorClient;
   private readonly restUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly apikey?: string;
@@ -61,6 +64,25 @@ export class LaetoliDataClient {
       fetch: this.fetchImpl,
       headers: () => this.baseHeaders(),
     });
+    // Vectors/RPC ride the same PostgREST endpoint + bearer as `.from()`.
+    this.vectors = new VectorClient({
+      restUrl: this.restUrl,
+      headers: () => this.restHeaders(),
+      fetch: this.fetchImpl,
+    });
+  }
+
+  /** Call a PostgREST RPC (SQL function) — POST `{rest}/rpc/<fn>` with a JSON body. */
+  rpc<T = unknown>(fnName: string, args: Record<string, unknown> = {}): Promise<DataResult<T>> {
+    return this.vectors.rpc<T>(fnName, args);
+  }
+
+  /** Cosine-similarity search over `public.documents` (shortcut for `.vectors.matchDocuments`). */
+  matchDocuments<M = Record<string, unknown>>(
+    embedding: readonly number[],
+    opts?: MatchOptions,
+  ): Promise<DataResult<MatchedDocument<M>[]>> {
+    return this.vectors.matchDocuments<M>(embedding, opts);
   }
 
   /** Begin a PostgREST query against a table or view. */

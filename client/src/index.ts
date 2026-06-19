@@ -14,6 +14,8 @@ export type {
 } from './realtime';
 export { FunctionsClient } from './functions';
 export type { InvokeOptions } from './functions';
+export { VectorClient } from './vectors';
+export type { MatchedDocument, MatchOptions } from './vectors';
 export type {
   ClientOptions,
   TokenStorage,

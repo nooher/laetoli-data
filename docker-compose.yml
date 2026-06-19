@@ -28,7 +28,9 @@ name: laetoli-data
 
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 is a drop-in superset of Postgres 16 with the
+    # `vector` extension (AI-native vector search). Multi-arch incl. arm64 (Pi).
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     env_file: .env
     environment:
