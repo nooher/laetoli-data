@@ -58,10 +58,10 @@ Shaping: `select, order, limit, range, single, maybeSingle`.
 
 ```ts
 // Sign up / Jisajili  (username + password)
-await db.auth.signUp({ username: 'naim', password: 'siri-ndefu' });
+await db.auth.signUp({ username: 'naim', password: '<nenosiri-lako>' });
 
 // Sign in / Ingia
-await db.auth.signInWithPassword({ username: 'naim', password: 'siri-ndefu' });
+await db.auth.signInWithPassword({ username: 'naim', password: '<nenosiri-lako>' });
 
 // Anonymous / Bila jina
 await db.auth.signInAnonymously();
