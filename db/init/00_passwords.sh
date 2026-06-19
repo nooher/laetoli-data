@@ -27,6 +27,9 @@ LAETOLI_AUTH_PASSWORD="${LAETOLI_AUTH_PASSWORD:-$POSTGRES_PASSWORD}"
 # both reuse POSTGRES_PASSWORD by convention (override if you want per-role secrets).
 LAETOLI_STORAGE_PASSWORD="${LAETOLI_STORAGE_PASSWORD:-$POSTGRES_PASSWORD}"
 LAETOLI_REALTIME_PASSWORD="${LAETOLI_REALTIME_PASSWORD:-$POSTGRES_PASSWORD}"
+# admin API (:9996) connects AS laetoli_admin_login — LOGIN + INHERIT (so it picks
+# up laetoli_admin's privileges; 06_admin.sql adds membership + BYPASSRLS).
+LAETOLI_ADMIN_PASSWORD="${LAETOLI_ADMIN_PASSWORD:-$POSTGRES_PASSWORD}"
 
 psql -v ON_ERROR_STOP=1 \
      --username "$POSTGRES_USER" \
@@ -34,7 +37,8 @@ psql -v ON_ERROR_STOP=1 \
      --set=authenticator_pw="$AUTHENTICATOR_PASSWORD" \
      --set=laetoli_auth_pw="$LAETOLI_AUTH_PASSWORD" \
      --set=laetoli_storage_pw="$LAETOLI_STORAGE_PASSWORD" \
-     --set=laetoli_realtime_pw="$LAETOLI_REALTIME_PASSWORD" <<-'EOSQL'
+     --set=laetoli_realtime_pw="$LAETOLI_REALTIME_PASSWORD" \
+     --set=laetoli_admin_pw="$LAETOLI_ADMIN_PASSWORD" <<-'EOSQL'
 	DROP ROLE IF EXISTS authenticator;
 	CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD :'authenticator_pw';
 
@@ -46,6 +50,11 @@ psql -v ON_ERROR_STOP=1 \
 
 	DROP ROLE IF EXISTS laetoli_realtime;
 	CREATE ROLE laetoli_realtime LOGIN NOINHERIT PASSWORD :'laetoli_realtime_pw';
+
+	-- INHERIT (not NOINHERIT) so it picks up laetoli_admin's object privileges;
+	-- 06_admin.sql adds the laetoli_admin membership + BYPASSRLS attribute.
+	DROP ROLE IF EXISTS laetoli_admin_login;
+	CREATE ROLE laetoli_admin_login LOGIN INHERIT PASSWORD :'laetoli_admin_pw';
 EOSQL
 
-echo "00_passwords.sh: authenticator + laetoli_auth + laetoli_storage + laetoli_realtime passwords set."
+echo "00_passwords.sh: authenticator + laetoli_auth + laetoli_storage + laetoli_realtime + laetoli_admin_login passwords set."

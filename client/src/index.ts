@@ -12,6 +12,8 @@ export type {
   RealtimeCallback,
   RealtimeOptions,
 } from './realtime';
+export { FunctionsClient } from './functions';
+export type { InvokeOptions } from './functions';
 export type {
   ClientOptions,
   TokenStorage,

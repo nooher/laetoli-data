@@ -21,17 +21,60 @@ import {
   type StreamResult,
 } from './handlers.js';
 
+import { Registry } from './metrics.js';
+
 export interface AppDeps {
   db: Db;
   store: ObjectStore;
   jwtSecret: string;
   /** Max upload size in bytes. */
   maxUploadBytes?: number;
+  /** Optional shared metrics registry (defaults to a fresh one). */
+  registry?: Registry;
 }
 
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.set('trust proxy', true);
+
+  // ---- observability: Prometheus metrics ---------------------------------
+  const registry = deps.registry ?? new Registry();
+  const httpRequests = registry.counter(
+    'http_requests_total',
+    'Total HTTP requests by route and status.'
+  );
+  const httpDuration = registry.histogram(
+    'http_request_duration_seconds',
+    'HTTP request duration in seconds.'
+  );
+  // Service-specific counter: objects served (successful GET /object downloads).
+  const objectsServed = registry.counter(
+    'storage_objects_served_total',
+    'Object downloads served (2xx GET /object responses).'
+  );
+
+  app.use((req, res, next) => {
+    const start = process.hrtime.bigint();
+    res.on('finish', () => {
+      const route = routeLabel(req.method, req.path);
+      const seconds = Number(process.hrtime.bigint() - start) / 1e9;
+      httpRequests.inc({ route, status: String(res.statusCode) });
+      httpDuration.observe(seconds, { route });
+      if (
+        req.method === 'GET' &&
+        res.statusCode < 300 &&
+        (req.path.startsWith('/object/') || req.path.startsWith('/signed/'))
+      ) {
+        objectsServed.inc();
+      }
+    });
+    next();
+  });
+
+  app.get('/metrics', (_req, res) => {
+    res.setHeader('Content-Type', Registry.contentType);
+    res.send(registry.render());
+  });
 
   // JSON only for the metadata/bucket/sign endpoints. Object bodies are read as
   // raw streams (no body parser) so uploads never buffer fully in memory.
@@ -262,4 +305,16 @@ export function createApp(deps: AppDeps): Express {
   );
 
   return app;
+}
+
+/** Collapse parameterised paths to a stable, low-cardinality metrics label. */
+function routeLabel(method: string, path: string): string {
+  if (path === '/health' || path === '/metrics') return path;
+  if (path === '/bucket') return '/bucket';
+  if (path.startsWith('/bucket/')) return '/bucket/:name';
+  if (path.startsWith('/list/')) return '/list/:bucket';
+  if (path.startsWith('/sign/')) return '/sign/:bucket/*';
+  if (path.startsWith('/signed/')) return '/signed/:bucket/*';
+  if (path.startsWith('/object/')) return `${method} /object/:bucket/*`;
+  return 'other';
 }

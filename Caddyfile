@@ -47,8 +47,25 @@
 		reverse_proxy realtime:9997
 	}
 
+	# Admin API — strip /admin, forward to the admin service (gated by ADMIN_API_KEY).
+	handle_path /admin/* {
+		reverse_proxy admin:9996
+	}
+
+	# Edge functions — strip /functions, forward to the runner.
+	handle_path /functions/* {
+		reverse_proxy functions:9995
+	}
+
+	# Admin Studio SPA — its build base is /studio/; forward UNstripped to the
+	# studio container (which serves /studio/* with SPA fallback).
+	redir /studio /studio/ 308
+	handle /studio/* {
+		reverse_proxy studio:80
+	}
+
 	# Root health/landing.
 	handle / {
-		respond "Laetoli Data — sovereign backend. Try /rest/ /auth/ /storage/ /realtime/." 200
+		respond "Laetoli Data — sovereign backend. Try /rest/ /auth/ /storage/ /realtime/ /functions/ /studio/ and /admin/." 200
 	}
 }

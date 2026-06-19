@@ -1,0 +1,21 @@
+# Inner static server for the Admin Studio container. The edge Caddy
+# reverse-proxies /studio/* here. We serve the Vite build (base '/studio/')
+# from /srv and rewrite any unknown /studio/* sub-path to the SPA index so
+# client-side (hash) routing and deep links work.
+:80 {
+	encode zstd gzip
+	root * /srv
+
+	# SPA fallback: serve the studio index for anything under /studio that
+	# isn't a real file (e.g. /studio/anything).
+	@studioMissing {
+		path /studio/*
+		not file
+	}
+	rewrite @studioMissing /studio/index.html
+
+	# Convenience: bare /studio -> /studio/
+	redir /studio /studio/ 308
+
+	file_server
+}

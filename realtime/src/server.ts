@@ -21,11 +21,14 @@ import {
   createPgListener,
   type NotificationSource,
 } from './listener.js';
+import { Registry } from './metrics.js';
 
 export interface ServerDeps {
   config: RealtimeConfig;
   /** Injected for tests; defaults to the real pg listener. */
   listener?: NotificationSource;
+  /** Optional shared metrics registry (defaults to a fresh one). */
+  registry?: Registry;
 }
 
 export interface RealtimeServer {
@@ -43,7 +46,36 @@ export function createServer(deps: ServerDeps): RealtimeServer {
   const hub = new Hub();
   const listener = deps.listener ?? createPgListener(config);
 
+  // ---- observability: Prometheus metrics ----------------------------------
+  const registry = deps.registry ?? new Registry();
+  const httpRequests = registry.counter(
+    'http_requests_total',
+    'Total HTTP requests by route and status.'
+  );
+  const httpDuration = registry.histogram(
+    'http_request_duration_seconds',
+    'HTTP request duration in seconds.'
+  );
+  // Service-specific gauges, sampled at scrape time from the live Hub.
+  const activeConnections = registry.gauge(
+    'realtime_active_connections',
+    'Currently connected, authenticated WebSocket clients.'
+  );
+  const activeSubscriptions = registry.gauge(
+    'realtime_active_subscriptions',
+    'Currently active channel subscriptions across all clients.'
+  );
+
   const httpServer = http.createServer((req, res) => {
+    const start = process.hrtime.bigint();
+    const url = req.url ?? '/';
+    res.on('finish', () => {
+      const route = httpRouteLabel(url);
+      const seconds = Number(process.hrtime.bigint() - start) / 1e9;
+      httpRequests.inc({ route, status: String(res.statusCode) });
+      httpDuration.observe(seconds, { route });
+    });
+
     if (req.method === 'GET' && (req.url === '/health' || req.url === '/realtime/health')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(
@@ -54,6 +86,14 @@ export function createServer(deps: ServerDeps): RealtimeServer {
           clients: hub.clientCount,
         })
       );
+      return;
+    }
+    if (req.method === 'GET' && (req.url === '/metrics' || req.url === '/realtime/metrics')) {
+      // Refresh gauges from live state at scrape time.
+      activeConnections.set(hub.clientCount);
+      activeSubscriptions.set(hub.subscriptionCount());
+      res.writeHead(200, { 'Content-Type': Registry.contentType });
+      res.end(registry.render());
       return;
     }
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -176,6 +216,14 @@ export function createServer(deps: ServerDeps): RealtimeServer {
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     },
   };
+}
+
+/** Collapse a URL to a stable, low-cardinality metrics route label. */
+function httpRouteLabel(url: string): string {
+  const path = url.split('?')[0];
+  if (path === '/health' || path === '/realtime/health') return '/health';
+  if (path === '/metrics' || path === '/realtime/metrics') return '/metrics';
+  return 'other';
 }
 
 function safeUrl(url: string | undefined): { pathname: string; searchParams: URLSearchParams } {

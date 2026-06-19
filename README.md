@@ -27,18 +27,22 @@ client →│ /rest/* → PostgREST  /auth/* → Auth  /storage/* → Storage  /
 - **Auth service** (`auth/`, Node/Express, `:9999`) — lean GoTrue-equivalent: signup / login (username + password, bcrypt) / **anonymous sign-in**; issues HS256 JWTs signed with the **same** `JWT_SECRET`, claims `{ sub, role, exp }`. Users live in `auth.users`.
 - **Storage service** (`storage/`, Node/Express, `:9998`) — sovereign object storage. Buckets + object metadata in Postgres (`storage` schema, RLS), bytes on a **filesystem volume** (no MinIO/S3 — lighter on a Pi). Public & private buckets, owner-scoped writes, time-limited **signed URLs**.
 - **Realtime service** (`realtime/`, Node/`ws`, `:9997`) — Postgres `LISTEN/NOTIFY` → **WebSocket** fan-out of row changes. Enable per table with `SELECT realtime.enable('public.my_table')`. JWT-gated; subscribe by table with an optional equality filter. (v1 fan-out is table-level — see the RLS note in `db/migrations/0002_realtime.sql`.)
-- **Caddy** — single TLS endpoint; routes `/rest/*` → PostgREST, `/auth/*` → auth, `/storage/*` → storage, `/realtime` → realtime (WebSocket).
+- **Admin API** (`admin/`, Node/Express, `:9996`) — schema introspection, table CRUD, SQL console, RLS-policy/roles/users/storage browsing + `/stats`. Connects as `laetoli_admin_login` (BYPASSRLS); gated by the `ADMIN_API_KEY` "service-role key".
+- **Admin Studio** (`studio/`, Vite+React, served at `/studio/`) — the sovereign dashboard: Table Editor, SQL Console, Auth users, Storage browser, RLS Policies viewer, stats. Paste the `ADMIN_API_KEY` to sign in.
+- **Edge Functions** (`functions/`, Node, `:9995`) — operator-provided serverless functions over HTTP at `/functions/<name>`; per-invocation timeout, optional JWT `ctx.user`.
+- **Backups + PITR** (`backup/`, `:9994`) — scheduled `pg_dump` + retention; optional WAL archiving for point-in-time recovery (see `docs/PITR.md`).
+- **Observability** — each service exposes Prometheus `/metrics` (internal); see `docs/OBSERVABILITY.md`.
+- **Caddy** — single TLS endpoint; routes `/rest/*`→PostgREST, `/auth/*`→auth, `/storage/*`→storage, `/realtime`→realtime (WS), `/admin/*`→admin, `/functions/*`→functions, `/studio/*`→Studio.
 - **@laetoli/data** (`client/`) — JS/TS SDK mirroring the Supabase-JS subset our apps use: `from(table).select/insert/update/delete/eq/order/limit`, `auth.signUp/signInWithPassword/signInAnonymously/getUser/signOut`, **`storage.from(bucket).upload/download/list/createSignedUrl`**, **`channel(table).on(event, cb).subscribe()`**. Swap `createClient(URL, KEY)` → point at your Laetoli Data endpoint.
 
 ## Layout
 - `docker-compose.yml` · `Caddyfile` · `.env.example` — the stack
 - `db/` — schema, roles, RLS, `init/` (fresh boot) + `migrations/` (upgrade path) + `seed/`
-- `auth/` — the sovereign auth service (+ Dockerfile, tests)
-- `storage/` — object storage service (+ Dockerfile, tests)
-- `realtime/` — realtime WebSocket service (+ Dockerfile, tests)
+- `auth/` · `storage/` · `realtime/` · `admin/` · `functions/` · `backup/` — the sovereign services (each + Dockerfile, tests)
+- `studio/` — the Admin Studio dashboard (Vite+React, served at `/studio/`)
 - `client/` — `@laetoli/data` SDK (+ tests)
 - `cli/` — `laetoli-data` CLI (init / up / migrate / backup / …)
-- `DEPLOY.md` · `RASPBERRY_PI.md` — run it on a VPS or a Pi (+ backups)
+- `docs/` — `PITR.md`, `OBSERVABILITY.md` · `DEPLOY.md` · `RASPBERRY_PI.md`
 
 ## Quick start
 ```bash
@@ -63,7 +67,11 @@ await db.auth.signUp({ username, password });
 await db.from('notes').insert({ body: 'habari' });
 await db.storage.from('media').upload('a.png', file);
 db.channel('notes').on('INSERT', (e) => console.log(e.record)).subscribe();
+await db.functions.invoke('hello', { body: { jina: 'Asha' } });
 ```
+
+Open the **Admin Studio** at `http://localhost:8088/studio/` and sign in with
+your `ADMIN_API_KEY` to browse tables, run SQL, and manage auth/storage/RLS.
 
 ## CLI (`laetoli-data`)
 | Command | Does |

@@ -3,6 +3,7 @@ import { QueryBuilder } from './query';
 import { DEFAULT_STORAGE_KEY, resolveStorage } from './storage';
 import { StorageClient } from './objectstore';
 import { RealtimeClient, type RealtimeChannel } from './realtime';
+import { FunctionsClient } from './functions';
 import type { ClientOptions } from './types';
 
 /**
@@ -16,6 +17,8 @@ export class LaetoliDataClient {
   readonly storage: StorageClient;
   /** Realtime — `.realtime.channel(table)` or the `.channel(table)` shortcut. */
   readonly realtime: RealtimeClient;
+  /** Edge functions — `.functions.invoke(name, { body })`. */
+  readonly functions: FunctionsClient;
   private readonly restUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly apikey?: string;
@@ -54,6 +57,10 @@ export class LaetoliDataClient {
       headers: () => this.baseHeaders(),
     });
     this.realtime = new RealtimeClient(base, token);
+    this.functions = new FunctionsClient(base, token, {
+      fetch: this.fetchImpl,
+      headers: () => this.baseHeaders(),
+    });
   }
 
   /** Begin a PostgREST query against a table or view. */

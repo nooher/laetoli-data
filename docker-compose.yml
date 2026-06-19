@@ -139,6 +139,76 @@ services:
     expose:
       - "9997"
 
+  admin:
+    build:
+      context: ./admin
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      PORT: "9996"
+      # Connects AS laetoli_admin_login (BYPASSRLS) — keys-to-the-kingdom.
+      DATABASE_URL: postgres://laetoli_admin_login:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: laetoli_admin_login
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "9996"
+
+  studio:
+    build:
+      context: ./studio
+    restart: unless-stopped
+    depends_on:
+      - rest
+    expose:
+      - "80"
+
+  functions:
+    build:
+      context: ./functions
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      FUNCTIONS_PORT: "9995"
+      FUNCTIONS_ROOT: /functions
+      FUNCTION_TIMEOUT_MS: ${FUNCTION_TIMEOUT_MS:-10000}
+    volumes:
+      - ./functions/src:/functions:ro
+    expose:
+      - "9995"
+
+  backup:
+    build:
+      context: ./backup
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BACKUP_CRON: ${BACKUP_CRON:-0 3 * * *}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      BACKUP_PORT: "9994"
+      BACKUP_DIR: /backups
+      # Dump as the superuser for a complete dump (all schemas/roles' tables).
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    volumes:
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "9994"
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -157,9 +227,15 @@ services:
       - auth
       - storage
       - realtime
+      - admin
+      - studio
+      - functions
 
 volumes:
   pgdata:
   caddy_data:
   caddy_config:
   storage_data:
+  backups:
+  # Only used when PITR is enabled (see docs/PITR.md); harmless if unused.
+  wal_archive:

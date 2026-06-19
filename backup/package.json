@@ -1,0 +1,21 @@
+{
+  "name": "@laetoli/backup",
+  "version": "0.1.0",
+  "description": "Laetoli Data — automated backup service. Scheduled pg_dump (gzip) with retention pruning + an observability HTTP endpoint. Dependency-light, arm64-compatible (runs on a Raspberry Pi).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
