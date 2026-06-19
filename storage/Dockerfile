@@ -1,5 +1,12 @@
-# Laetoli Data — storage service. node:22-alpine, arm64-compatible (pure-JS deps).
+# Laetoli Data — storage service. node:22-alpine, multi-arch (x64 + arm64).
 # Multi-stage: build TS, then run a slim production image.
+#
+# sharp (image transforms) ships prebuilt musl binaries via its optional
+# @img/sharp-linuxmusl-{x64,arm64} packages, so `npm install` pulls the right
+# native binary per build arch — no apk build deps required on node:22-alpine.
+# If a future sharp release drops a prebuild for your arch, add build deps:
+#   RUN apk add --no-cache vips-dev build-base python3
+# and set SHARP_IGNORE_GLOBAL_LIBVIPS / rebuild from source.
 
 # ---- build ----
 FROM node:22-alpine AS build

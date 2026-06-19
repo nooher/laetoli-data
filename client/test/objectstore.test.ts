@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 // Import directly from the module — index.ts wiring is done by the orchestrator.
-import { StorageClient } from '../src/objectstore';
+import { StorageClient, buildTransformQuery } from '../src/objectstore';
 import { makeFetch } from './helpers';
 
 const URL = 'https://data.laetoli.tz';
@@ -101,6 +101,54 @@ describe('StorageClient.from().getPublicUrl', () => {
     expect(publicUrl).toBe(`${STORAGE}/object/public/logo.png`);
     expect(data.publicUrl).toBe(publicUrl);
     expect(calls.length).toBe(0);
+  });
+});
+
+describe('buildTransformQuery', () => {
+  it('returns an empty string for no options', () => {
+    expect(buildTransformQuery()).toBe('');
+    expect(buildTransformQuery({})).toBe('');
+  });
+
+  it('builds width + format', () => {
+    expect(buildTransformQuery({ width: 40, format: 'webp' })).toBe('?width=40&format=webp');
+  });
+
+  it('builds all params in a stable order', () => {
+    expect(
+      buildTransformQuery({ width: 100, height: 200, resize: 'contain', format: 'jpeg', quality: 80 }),
+    ).toBe('?width=100&height=200&resize=contain&format=jpeg&quality=80');
+  });
+});
+
+describe('StorageClient.from().getPublicUrl with transform', () => {
+  it('appends transform query params', () => {
+    const { fn, calls } = makeFetch([]);
+    const { publicUrl } = client(fn)
+      .from('public')
+      .getPublicUrl('logo.png', { transform: { width: 40, format: 'webp' } });
+    expect(publicUrl).toBe(`${STORAGE}/object/public/logo.png?width=40&format=webp`);
+    expect(calls.length).toBe(0);
+  });
+
+  it('returns the plain URL when no transform is given', () => {
+    const { fn } = makeFetch([]);
+    const { publicUrl } = client(fn).from('public').getPublicUrl('logo.png');
+    expect(publicUrl).toBe(`${STORAGE}/object/public/logo.png`);
+  });
+});
+
+describe('StorageClient.from().transformUrl', () => {
+  it('builds an object URL with transform params', () => {
+    const { fn } = makeFetch([]);
+    const url = client(fn).from('photos').transformUrl('a/b.png', {
+      width: 200,
+      height: 200,
+      resize: 'cover',
+      format: 'avif',
+      quality: 70,
+    });
+    expect(url).toBe(`${STORAGE}/object/photos/a/b.png?width=200&height=200&resize=cover&format=avif&quality=70`);
   });
 });
 

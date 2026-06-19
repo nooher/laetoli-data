@@ -20,6 +20,12 @@ import {
   verifySignedToken,
 } from './jwt.js';
 import { validateBucketName, validateObjectPath } from './validation.js';
+import {
+  type TransformParams,
+  transformCacheKey,
+  isTransformable,
+  runTransform,
+} from './transform.js';
 
 export interface HandlerDeps {
   db: Db;
@@ -36,6 +42,12 @@ export interface StreamResult {
   stream: NodeJS.ReadableStream;
   mime: string;
   size: number;
+}
+
+/** A fully-buffered transformed image variant served from memory. */
+export interface BufferResult {
+  buffer: Buffer;
+  mime: string;
 }
 
 function err(message: string): { error: string } {
@@ -171,8 +183,9 @@ export async function handleDownload(
   deps: HandlerDeps,
   authorization: string | undefined,
   bucket: string,
-  rawPath: string
-): Promise<JsonResult | StreamResult> {
+  rawPath: string,
+  transform: TransformParams | null = null
+): Promise<JsonResult | StreamResult | BufferResult> {
   const p = validateObjectPath(rawPath);
   if (!p.ok) return { status: 400, body: err(p.error!) };
 
@@ -186,7 +199,7 @@ export async function handleDownload(
     }
   }
 
-  return openObject(deps, bucket, p.path!);
+  return openObject(deps, bucket, p.path!, transform);
 }
 
 export async function handleList(
@@ -283,8 +296,9 @@ export async function handleSigned(
   deps: HandlerDeps,
   bucket: string,
   rawPath: string,
-  token: unknown
-): Promise<JsonResult | StreamResult> {
+  token: unknown,
+  transform: TransformParams | null = null
+): Promise<JsonResult | StreamResult | BufferResult> {
   if (typeof token !== 'string' || token.length === 0) {
     return { status: 401, body: err('Tokeni ya kiungo inahitajika.') };
   }
@@ -300,7 +314,7 @@ export async function handleSigned(
   const bkt = await deps.db.getBucket(bucket);
   if (!bkt) return { status: 404, body: err('Ndoo haipatikani.') };
 
-  return openObject(deps, bucket, p.path!);
+  return openObject(deps, bucket, p.path!, transform);
 }
 
 // ---- shared ---------------------------------------------------------------
@@ -308,13 +322,22 @@ export async function handleSigned(
 async function openObject(
   deps: HandlerDeps,
   bucket: string,
-  path: string
-): Promise<JsonResult | StreamResult> {
+  path: string,
+  transform: TransformParams | null = null
+): Promise<JsonResult | StreamResult | BufferResult> {
   const row = await deps.db.getObject(bucket, path);
   if (!row) return { status: 404, body: err('Faili haipatikani.') };
 
   const onDisk = await deps.store.stat(bucket, path);
   if (!onDisk) return { status: 404, body: err('Faili haipatikani.') };
+
+  // Transform path: only for raster images. Non-images (or unsupported types)
+  // with transform params fall through to the original bytes (documented).
+  if (transform && isTransformable(row.mime)) {
+    const variant = await openTransformed(deps, bucket, path, row.mime, transform, onDisk);
+    if (variant) return variant;
+    // null → any failure (corrupt image, sharp error): serve the original.
+  }
 
   let stream: NodeJS.ReadableStream;
   try {
@@ -326,10 +349,66 @@ async function openObject(
   return { stream, mime: row.mime, size: onDisk.size };
 }
 
+/**
+ * Produce (or fetch from cache) a transformed image variant. Returns a
+ * BufferResult on success, or null on ANY failure so the caller can fall back
+ * to the original — a corrupt image or sharp error must never 500 the service.
+ */
+async function openTransformed(
+  deps: HandlerDeps,
+  bucket: string,
+  path: string,
+  sourceMime: string,
+  transform: TransformParams,
+  onDisk: { size: number; mtimeMs: number }
+): Promise<BufferResult | null> {
+  const key = transformCacheKey(bucket, path, transform, onDisk);
+
+  // 1) Serve from cache when present.
+  try {
+    const cached = await deps.store.getCached(key);
+    if (cached) {
+      return { buffer: cached, mime: transformMime(transform, sourceMime) };
+    }
+  } catch {
+    /* cache miss/error → fall through to generate */
+  }
+
+  // 2) Generate.
+  try {
+    const input = await deps.store.readAll(bucket, path);
+    const out = await runTransform(input, transform, sourceMime);
+    // 3) Cache (best-effort; never blocks/throws into the response).
+    await deps.store.putCached(key, out.data);
+    return { buffer: out.data, mime: out.mime };
+  } catch (e) {
+    console.warn(
+      `[storage] transform failed for ${bucket}/${path} — serving original:`,
+      e instanceof Error ? e.message : String(e)
+    );
+    return null;
+  }
+}
+
+/** Content-Type for a cached variant (format → its mime, else source). */
+function transformMime(transform: TransformParams, sourceMime: string): string {
+  return transform.format
+    ? { webp: 'image/webp', jpeg: 'image/jpeg', png: 'image/png', avif: 'image/avif' }[
+        transform.format
+      ]
+    : sourceMime;
+}
+
 export function isStreamResult(
-  r: JsonResult | StreamResult
+  r: JsonResult | StreamResult | BufferResult
 ): r is StreamResult {
   return (r as StreamResult).stream !== undefined;
+}
+
+export function isBufferResult(
+  r: JsonResult | StreamResult | BufferResult
+): r is BufferResult {
+  return Buffer.isBuffer((r as BufferResult).buffer);
 }
 
 function normalizeMime(contentType: string | undefined): string {

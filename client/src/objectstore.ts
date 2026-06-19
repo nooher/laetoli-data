@@ -37,6 +37,40 @@ export interface UploadOptions {
   contentType?: string;
 }
 
+/**
+ * On-the-fly image transform options (Supabase-parity). Appended as query
+ * params to a download URL; the storage service returns a resized/reformatted
+ * variant when the object is a raster image. Omit to get the original bytes.
+ */
+export interface TransformOptions {
+  /** Target width in px (server clamps to a max, e.g. 2000). */
+  width?: number;
+  /** Target height in px (server clamps to a max, e.g. 2000). */
+  height?: number;
+  /** Fit mode when both dims are set. Default 'cover'. */
+  resize?: 'cover' | 'contain' | 'fill';
+  /** Output format (re-encodes). */
+  format?: 'webp' | 'jpeg' | 'png' | 'avif';
+  /** Output quality, 1–100 (where the encoder supports it). */
+  quality?: number;
+}
+
+/**
+ * Build a `?width=…&format=…` query string from transform options. Pure +
+ * exported so it can be unit-tested and reused. Returns '' when no options.
+ */
+export function buildTransformQuery(t?: TransformOptions): string {
+  if (!t) return '';
+  const parts: string[] = [];
+  if (t.width != null) parts.push(`width=${encodeURIComponent(String(t.width))}`);
+  if (t.height != null) parts.push(`height=${encodeURIComponent(String(t.height))}`);
+  if (t.resize) parts.push(`resize=${encodeURIComponent(t.resize)}`);
+  if (t.format) parts.push(`format=${encodeURIComponent(t.format)}`);
+  if (t.quality != null)
+    parts.push(`quality=${encodeURIComponent(String(t.quality))}`);
+  return parts.length ? `?${parts.join('&')}` : '';
+}
+
 export type StorageBody = Blob | ArrayBuffer | Uint8Array | string;
 
 /** A single-bucket handle, returned by `.from(bucket)`. */
@@ -125,11 +159,25 @@ export class BucketApi {
 
   /**
    * Build a public URL for an object in a PUBLIC bucket. Synchronous, like
-   * supabase-js — no network call, no auth.
+   * supabase-js — no network call, no auth. Pass `{ transform }` to request an
+   * on-the-fly resized/reformatted image variant.
    */
-  getPublicUrl(path: string): { data: { publicUrl: string }; publicUrl: string } {
-    const publicUrl = `${this.storageUrl}/object/${enc(this.bucket)}/${encPath(path)}`;
+  getPublicUrl(
+    path: string,
+    opts: { transform?: TransformOptions } = {},
+  ): { data: { publicUrl: string }; publicUrl: string } {
+    const qs = buildTransformQuery(opts.transform);
+    const publicUrl = `${this.storageUrl}/object/${enc(this.bucket)}/${encPath(path)}${qs}`;
     return { data: { publicUrl }, publicUrl };
+  }
+
+  /**
+   * Build a transform URL for an object (resized/reformatted image variant).
+   * Convenience over getPublicUrl — same result, transform-first signature.
+   * For private buckets, append the same query params to a signed URL instead.
+   */
+  transformUrl(path: string, transform: TransformOptions): string {
+    return `${this.storageUrl}/object/${enc(this.bucket)}/${encPath(path)}${buildTransformQuery(transform)}`;
   }
 
   /** Create a time-limited signed URL for a private object. */

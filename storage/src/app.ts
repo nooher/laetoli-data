@@ -16,10 +16,13 @@ import {
   handleSign,
   handleSigned,
   isStreamResult,
+  isBufferResult,
   type HandlerDeps,
   type JsonResult,
   type StreamResult,
+  type BufferResult,
 } from './handlers.js';
+import { parseTransform } from './transform.js';
 
 import { Registry } from './metrics.js';
 import { apikeyGuard, type ApiKeyStore } from './apikeyGuard.js';
@@ -116,7 +119,17 @@ export function createApp(deps: AppDeps): Express {
   const sendJson = (res: Response, r: JsonResult) =>
     res.status(r.status).json(r.body);
 
-  const sendResult = (res: Response, r: JsonResult | StreamResult) => {
+  const sendResult = (
+    res: Response,
+    r: JsonResult | StreamResult | BufferResult
+  ) => {
+    if (isBufferResult(r)) {
+      res.status(200);
+      res.setHeader('Content-Type', r.mime);
+      res.setHeader('Content-Length', String(r.buffer.length));
+      res.end(r.buffer);
+      return;
+    }
     if (isStreamResult(r)) {
       res.status(200);
       res.setHeader('Content-Type', r.mime);
@@ -212,13 +225,19 @@ export function createApp(deps: AppDeps): Express {
 
   app.get('/signed/:bucket/*', async (req, res, next) => {
     try {
+      const t = parseTransform(req.query as Record<string, unknown>);
+      if (t.error) {
+        sendJson(res, { status: 400, body: { error: t.error } });
+        return;
+      }
       sendResult(
         res,
         await handleSigned(
           handlerDeps,
           req.params.bucket,
           objectPath(req),
-          req.query.token
+          req.query.token,
+          t.params
         )
       );
     } catch (e) {
@@ -259,13 +278,19 @@ export function createApp(deps: AppDeps): Express {
 
   app.get('/object/:bucket/*', async (req, res, next) => {
     try {
+      const t = parseTransform(req.query as Record<string, unknown>);
+      if (t.error) {
+        sendJson(res, { status: 400, body: { error: t.error } });
+        return;
+      }
       sendResult(
         res,
         await handleDownload(
           handlerDeps,
           req.header('authorization'),
           req.params.bucket,
-          objectPath(req)
+          objectPath(req),
+          t.params
         )
       );
     } catch (e) {
