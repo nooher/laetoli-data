@@ -9,6 +9,12 @@ export interface RealtimeConfig {
   channel: string;
   /** Grace window (ms) for a {type:'auth'} message when no ?token= was given. */
   authGraceMs: number;
+  /**
+   * Ordered list of column names treated as a row's "owner" for per-subscriber
+   * realtime filtering. The first one present in the changed row wins. Default
+   * ['user_id','owner']. Override via REALTIME_OWNER_COLUMNS (comma-separated).
+   */
+  ownerColumns: string[];
   // Postgres connection: prefer DATABASE_URL, else POSTGRES_* parts.
   // The realtime service connects AS the dedicated `laetoli_realtime` role.
   databaseUrl?: string;
@@ -48,11 +54,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RealtimeConfig
   // The realtime role defaults to a dedicated, minimally-privileged login role.
   const pgUser = env.REALTIME_DB_USER ?? env.POSTGRES_USER ?? 'laetoli_realtime';
 
+  // Owner-column allowlist for per-subscriber filtering. Empty entries dropped;
+  // falls back to the default pair if the override resolves to nothing.
+  const ownerColumns = (env.REALTIME_OWNER_COLUMNS ?? 'user_id,owner')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
   return {
     jwtSecret,
     port,
     channel: env.REALTIME_CHANNEL ?? 'laetoli_realtime',
     authGraceMs: Number.parseInt(env.REALTIME_AUTH_GRACE_MS ?? '5000', 10),
+    ownerColumns: ownerColumns.length > 0 ? ownerColumns : ['user_id', 'owner'],
     // REALTIME_DATABASE_URL lets the realtime service use its own role/DSN;
     // falls back to the shared DATABASE_URL if not set.
     databaseUrl: env.REALTIME_DATABASE_URL ?? env.DATABASE_URL,

@@ -70,8 +70,96 @@ export interface InboundUnsubscribe {
 
 const EVENTS: ReadonlySet<string> = new Set(['*', 'INSERT', 'UPDATE', 'DELETE']);
 
+/** Default owner columns when none are configured. */
+export const DEFAULT_OWNER_COLUMNS: readonly string[] = ['user_id', 'owner'];
+
+/**
+ * Roles that bypass owner-scoped filtering and receive every change on a table
+ * they subscribe to (e.g. a trusted backend/service consumer). Mirrors the
+ * BYPASSRLS spirit of the admin role at the DB layer.
+ */
+const ADMIN_ROLES: ReadonlySet<string> = new Set(['service', 'laetoli_admin']);
+
+/** A connection as seen by the owner-filter: just identity + subscription. */
+export interface SubscriberView {
+  claims: { sub: string; role: string };
+  sub: Subscription;
+}
+
+/**
+ * Decide which of `subscribers` is entitled to see `change`, applying the
+ * owner-scoping gate FIRST (before event/equality-filter matching, which the
+ * caller still applies). Pure + exhaustively unit-testable.
+ *
+ * Rules:
+ *   1. Find the row's owner: the first `ownerColumns` entry present in `record`
+ *      (or `old` for DELETE). "Present" = the key exists on the row object.
+ *   2. If the row has NO owner column → table-level broadcast (back-compat):
+ *      every subscriber is a candidate. Such tables are UNFILTERED — only
+ *      enable realtime on them if their rows are safe for any subscriber.
+ *   3. If the row HAS an owner column → deliver ONLY to subscribers whose
+ *      claims.sub === the owner value, plus any admin/service-role subscriber.
+ *   4. FAIL CLOSED: if the change is `truncated` (the trigger dropped `record`
+ *      so the owner cannot be determined), an owner-scoped subscription cannot
+ *      be proven entitled → exclude all non-admin subscribers. Admin/service
+ *      roles still receive it. We cannot tell whether a truncated row was
+ *      owner-scoped, so we treat it as if it MIGHT be and refuse to leak it to
+ *      non-owners; the back-compat broadcast does NOT apply to truncated rows.
+ */
+export function recipientsFor(
+  change: Notification,
+  subscribers: readonly SubscriberView[],
+  ownerColumns: readonly string[] = DEFAULT_OWNER_COLUMNS,
+): SubscriberView[] {
+  const row = change.record ?? change.old;
+
+  // FAIL CLOSED on truncated payloads: owner is unknowable. Only admins pass.
+  if (change.truncated || !row) {
+    if (change.truncated) {
+      return subscribers.filter((s) => ADMIN_ROLES.has(s.claims.role));
+    }
+    // Non-truncated but no row body at all (shouldn't happen for INSERT/UPDATE;
+    // a DELETE always carries `old`). Treat as unfiltered broadcast.
+    return subscribers.slice();
+  }
+
+  // Locate an owner column on the row (first match wins).
+  let ownerValue: unknown;
+  let hasOwnerColumn = false;
+  for (const col of ownerColumns) {
+    if (col in row) {
+      ownerValue = row[col];
+      hasOwnerColumn = true;
+      break;
+    }
+  }
+
+  // No recognized owner column → table-level broadcast (back-compat).
+  if (!hasOwnerColumn) {
+    return subscribers.slice();
+  }
+
+  // Owner-scoped: only the owner (by JWT sub) or an admin/service role.
+  return subscribers.filter(
+    (s) => ADMIN_ROLES.has(s.claims.role) || ownerMatches(s.claims.sub, ownerValue),
+  );
+}
+
+/** Compare a subscriber's `sub` to a row's owner value (string-loose). */
+function ownerMatches(sub: string, ownerValue: unknown): boolean {
+  if (ownerValue === null || ownerValue === undefined) return false;
+  if (typeof ownerValue === 'string') return sub === ownerValue;
+  if (typeof ownerValue === 'number') return sub === String(ownerValue);
+  return false;
+}
+
 export class Hub {
   private clients = new Map<SendTarget, ClientState>();
+  private readonly ownerColumns: readonly string[];
+
+  constructor(ownerColumns: readonly string[] = DEFAULT_OWNER_COLUMNS) {
+    this.ownerColumns = ownerColumns.length > 0 ? ownerColumns : DEFAULT_OWNER_COLUMNS;
+  }
 
   /** Number of connected clients (test/observability helper). */
   get clientCount(): number {
@@ -182,9 +270,16 @@ export class Hub {
   }
 
   /**
-   * Fan a Postgres notification out to every client whose subscription matches.
-   * Matching = same table (channel) AND event matches (* or exact) AND, if a
-   * filter is present, record[column] === value (loose, JSON-value equality).
+   * Fan a Postgres notification out to every client entitled to see the row.
+   *
+   * Gating order, all of which must pass:
+   *   1. Owner gate (recipientsFor): the row's owner column, if any, must match
+   *      the subscriber's JWT `sub` (or the subscriber is an admin/service role).
+   *      Tables without an owner column broadcast as before. Truncated rows fail
+   *      closed (only admins). This is the per-subscriber RLS approximation.
+   *   2. Channel: the client is subscribed to this table.
+   *   3. Event: subscription event is '*' or the exact change type.
+   *   4. Filter: optional client equality filter on record[column].
    */
   dispatch(note: Notification): void {
     const frame: OutboundMessage = {
@@ -197,14 +292,28 @@ export class Hub {
     };
     const payload = JSON.stringify(frame);
 
+    // Build the candidate set per table-subscription, apply the owner gate FIRST.
+    const candidates: SubscriberView[] = [];
+    const targets = new Map<SubscriberView, SendTarget>();
     for (const state of this.clients.values()) {
       const sub = state.subs.get(note.table);
       if (!sub) continue;
+      const view: SubscriberView = { claims: state.claims, sub };
+      candidates.push(view);
+      targets.set(view, state.target);
+    }
+
+    const entitled = recipientsFor(note, candidates, this.ownerColumns);
+
+    for (const view of entitled) {
+      const sub = view.sub;
       if (sub.event !== '*' && sub.event !== note.type) continue;
       if (sub.filter && !matchesFilter(sub.filter, note)) continue;
+      const target = targets.get(view);
+      if (!target) continue;
       // Send the pre-serialized payload directly.
       try {
-        state.target.send(payload);
+        target.send(payload);
       } catch {
         // A dead socket should not abort the fan-out to others.
       }

@@ -18,16 +18,29 @@
 -- `truncated: true`, so the client can re-fetch the row over PostgREST (subject
 -- to RLS).
 --
--- !! RLS NOTE (v1 scope) !!
--- Fan-out is TABLE-LEVEL, not per-subscriber row-level. The realtime service
--- broadcasts a table's changes to every client subscribed to that table. It
--- does NOT (yet) re-evaluate each table's RLS policy per connected user. THE
--- IMPLICATION: only enable realtime on tables whose rows are safe for any
--- subscriber to see, OR rely on the optional server-side equality `filter`
--- (e.g. filter user_id = <me>) which the client must set — note that a filter is
--- a convenience, not a security boundary. For owner-private tables, treat the
--- realtime stream as a "something changed" hint and fetch the actual rows via
--- PostgREST, which DOES enforce RLS. Full per-subscriber RLS is a v2 item.
+-- !! REALTIME OWNER-SCOPING NOTE !!
+-- Fan-out is now OWNER-AWARE (per-subscriber) for owner-scoped tables. On WS
+-- connect the realtime service verifies the JWT and pins the authenticated
+-- `sub` (user id) + `role` onto the connection. When a change arrives, the hub
+-- inspects the row (`record`, or `old` for DELETE) for an OWNER COLUMN — by
+-- default `user_id` or `owner` (configurable via REALTIME_OWNER_COLUMNS):
+--   * Row HAS an owner column  -> delivered ONLY to subscribers whose JWT `sub`
+--     equals that owner value (plus any `service` / `laetoli_admin` role
+--     connection, which bypasses the gate like BYPASSRLS does at the DB layer).
+--   * Row has NO recognized owner column -> table-level broadcast (back-compat).
+--     Such tables are UNFILTERED: every subscriber sees every change, so only
+--     enable realtime on them if their rows are safe for any subscriber to see.
+--
+-- FAIL CLOSED on truncation: if the payload was truncated (the heavy `record`
+-- was dropped over the 8000-byte NOTIFY cap), the owner CANNOT be determined.
+-- Such an event is NOT broadcast to non-owner subscribers — only admin/service
+-- connections receive it. Owner-scoped clients should treat the realtime stream
+-- as a "something changed" hint and re-fetch the row over PostgREST, which DOES
+-- enforce RLS authoritatively. The owner gate is a strong delivery boundary, but
+-- PostgREST remains the source of truth for what a user may actually read.
+--
+-- The optional client-set equality `filter` still works and is applied AFTER
+-- the owner gate; it is a convenience, not a security boundary.
 -- =============================================================================
 
 -- --- realtime schema ----------------------------------------------------------
@@ -158,9 +171,10 @@ GRANT EXECUTE ON FUNCTION realtime.disable(regclass) TO laetoli_admin;
 GRANT ALL ON SCHEMA realtime TO laetoli_admin;
 
 -- --- worked example: enable realtime on public.notes --------------------------
--- The demo owner-scoped table from db/init/03_example.sql. Per the RLS NOTE
--- above, prefer subscribing with a server-side filter on user_id, and re-fetch
--- via PostgREST for authoritative, RLS-enforced rows.
+-- The demo owner-scoped table from db/init/03_example.sql. Its `user_id` column
+-- makes it owner-scoped: per the OWNER-SCOPING NOTE above, a change is delivered
+-- only to the WS subscriber whose JWT `sub` equals the row's user_id (re-fetch
+-- via PostgREST for authoritative, RLS-enforced reads).
 SELECT realtime.enable('public.notes');
 
 -- =============================================================================

@@ -12,6 +12,7 @@ const config: RealtimeConfig = {
   port: 0, // ephemeral
   channel: 'laetoli_realtime',
   authGraceMs: 150, // keep the no-token rejection test fast
+  ownerColumns: ['user_id', 'owner'],
 
   pg: { host: 'db', port: 5432, user: 'laetoli_realtime', password: '', database: 'laetoli' },
 };

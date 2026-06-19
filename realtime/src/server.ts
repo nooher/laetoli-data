@@ -43,7 +43,7 @@ export interface RealtimeServer {
 export function createServer(deps: ServerDeps): RealtimeServer {
   const { config } = deps;
   const authGraceMs = config.authGraceMs; // window to send {type:'auth'} if no ?token=.
-  const hub = new Hub();
+  const hub = new Hub(config.ownerColumns);
   const listener = deps.listener ?? createPgListener(config);
 
   // ---- observability: Prometheus metrics ----------------------------------

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { Hub, matchesFilter, parseNotification, type Notification } from '../hub.js';
+import {
+  Hub,
+  matchesFilter,
+  parseNotification,
+  recipientsFor,
+  type Notification,
+  type SubscriberView,
+} from '../hub.js';
 import { FakeClient } from './fakeClient.js';
 
 const CLAIMS = { sub: 'u1', role: 'authenticated' };
@@ -214,10 +221,13 @@ describe('Hub — fan-out to multiple clients', () => {
     });
   });
 
-  it('passes through the truncated flag', () => {
+  it('passes through the truncated flag to an entitled (admin) subscriber', () => {
+    // Truncated rows fail closed for owner-scoped subscribers (the owner cannot
+    // be determined), but admin/service connections still receive them — and the
+    // truncated flag must survive on the frame.
     const hub = new Hub();
     const c = new FakeClient();
-    hub.add(c, CLAIMS);
+    hub.add(c, { sub: 'svc', role: 'service' });
     hub.handleMessage(c, JSON.stringify({ type: 'subscribe', channel: 'notes' }));
     hub.dispatch(note({ record: { id: '1' }, truncated: true }));
     expect(c.changes[0].truncated).toBe(true);
@@ -267,6 +277,152 @@ describe('Hub — malformed messages & lifecycle', () => {
     hub.add(c, CLAIMS);
     hub.handleMessage(c, JSON.stringify({ type: 'auth', token: 'whatever' }));
     expect(c.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('recipientsFor — owner-scoped filtering (pure)', () => {
+  const sub = (s: string, event = '*', role = 'authenticated'): SubscriberView => ({
+    claims: { sub: s, role },
+    sub: { channel: 'notes', event: event as SubscriberView['sub']['event'] },
+  });
+
+  it('owner-scoped row: only the matching sub is a recipient', () => {
+    const subs = [sub('u1'), sub('u2'), sub('u3')];
+    const got = recipientsFor(note({ record: { id: '1', user_id: 'u2' } }), subs);
+    expect(got).toHaveLength(1);
+    expect(got[0].claims.sub).toBe('u2');
+  });
+
+  it('respects the configured owner-column order (owner before fallback)', () => {
+    const subs = [sub('owner-x'), sub('uid-y')];
+    // Row carries BOTH; first configured column (owner) wins.
+    const got = recipientsFor(
+      note({ record: { id: '1', owner: 'owner-x', user_id: 'uid-y' } }),
+      subs,
+      ['owner', 'user_id'],
+    );
+    expect(got.map((g) => g.claims.sub)).toEqual(['owner-x']);
+  });
+
+  it('honors a custom owner column', () => {
+    const subs = [sub('u1'), sub('u2')];
+    const got = recipientsFor(note({ record: { id: '1', tenant: 'u2' } }), subs, ['tenant']);
+    expect(got.map((g) => g.claims.sub)).toEqual(['u2']);
+  });
+
+  it('table with NO owner column: everyone is a recipient (back-compat)', () => {
+    const subs = [sub('u1'), sub('u2')];
+    const got = recipientsFor(note({ record: { id: '1', body: 'public-ish' } }), subs);
+    expect(got).toHaveLength(2);
+  });
+
+  it('DELETE uses old to resolve the owner', () => {
+    const subs = [sub('u1'), sub('u2')];
+    const got = recipientsFor(
+      note({ type: 'DELETE', record: null, old: { id: '1', user_id: 'u1' } }),
+      subs,
+    );
+    expect(got.map((g) => g.claims.sub)).toEqual(['u1']);
+  });
+
+  it('admin/service role bypasses owner scoping', () => {
+    const subs = [sub('svc', '*', 'service'), sub('adm', '*', 'laetoli_admin'), sub('u9')];
+    const got = recipientsFor(note({ record: { id: '1', user_id: 'someone-else' } }), subs);
+    expect(got.map((g) => g.claims.sub).sort()).toEqual(['adm', 'svc']);
+  });
+
+  it('FAIL CLOSED: truncated owner-scoped row → no non-admin recipients', () => {
+    const subs = [sub('u1'), sub('u2')];
+    const got = recipientsFor(note({ record: { id: '1' }, truncated: true }), subs);
+    expect(got).toHaveLength(0);
+  });
+
+  it('FAIL CLOSED: truncated row still reaches admin/service connections', () => {
+    const subs = [sub('u1'), sub('svc', '*', 'service')];
+    const got = recipientsFor(note({ record: { id: '1' }, truncated: true }), subs);
+    expect(got.map((g) => g.claims.sub)).toEqual(['svc']);
+  });
+
+  it('tolerates a numeric owner value vs string sub', () => {
+    const subs = [sub('42'), sub('7')];
+    const got = recipientsFor(note({ record: { id: '1', user_id: 42 } }), subs);
+    expect(got.map((g) => g.claims.sub)).toEqual(['42']);
+  });
+
+  it('excludes everyone when the owner value is null', () => {
+    const subs = [sub('u1'), sub('u2')];
+    const got = recipientsFor(note({ record: { id: '1', user_id: null } }), subs);
+    expect(got).toHaveLength(0);
+  });
+});
+
+describe('Hub — owner-scoped fan-out (integration)', () => {
+  const ownerClaims = (s: string, role = 'authenticated') => ({ sub: s, role });
+
+  it('delivers an owner-scoped change ONLY to the owner', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, ownerClaims('u1'));
+    hub.add(b, ownerClaims('u2'));
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'notes' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'notes' }));
+
+    hub.dispatch(note({ record: { id: '1', user_id: 'u1', body: 'A only' } }));
+    expect(a.changes).toHaveLength(1);
+    expect(b.changes).toHaveLength(0);
+  });
+
+  it('a table without an owner column still broadcasts to all', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, ownerClaims('u1'));
+    hub.add(b, ownerClaims('u2'));
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'logs' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'logs' }));
+
+    hub.dispatch(note({ table: 'logs', record: { id: '1', message: 'boot' } }));
+    expect(a.changes).toHaveLength(1);
+    expect(b.changes).toHaveLength(1);
+  });
+
+  it('truncated owner-scoped row is NOT delivered to a regular subscriber', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    hub.add(a, ownerClaims('u1'));
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'notes' }));
+    hub.dispatch(note({ record: { id: '1' }, truncated: true }));
+    expect(a.changes).toHaveLength(0);
+  });
+
+  it('owner gate composes with the equality filter', () => {
+    const hub = new Hub();
+    const a = new FakeClient();
+    hub.add(a, ownerClaims('u1'));
+    // owner matches, but filter on body excludes
+    hub.handleMessage(
+      a,
+      JSON.stringify({ type: 'subscribe', channel: 'notes', filter: { column: 'body', value: 'keep' } }),
+    );
+    hub.dispatch(note({ record: { id: '1', user_id: 'u1', body: 'drop' } }));
+    expect(a.changes).toHaveLength(0);
+    hub.dispatch(note({ record: { id: '2', user_id: 'u1', body: 'keep' } }));
+    expect(a.changes).toHaveLength(1);
+  });
+
+  it('a custom ownerColumns config gates fan-out', () => {
+    const hub = new Hub(['tenant']);
+    const a = new FakeClient();
+    const b = new FakeClient();
+    hub.add(a, ownerClaims('t1'));
+    hub.add(b, ownerClaims('t2'));
+    hub.handleMessage(a, JSON.stringify({ type: 'subscribe', channel: 'notes' }));
+    hub.handleMessage(b, JSON.stringify({ type: 'subscribe', channel: 'notes' }));
+    hub.dispatch(note({ record: { id: '1', tenant: 't2', user_id: 't1' } }));
+    // user_id is NOT in the configured set, so only tenant matters → b only.
+    expect(a.changes).toHaveLength(0);
+    expect(b.changes).toHaveLength(1);
   });
 });
 
