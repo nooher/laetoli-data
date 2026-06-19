@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CLI · Laetoli Data docs</title>
+  <meta name="description" content="The laetoli-data CLI — init, up, down, status, migrate, seed, backup, restore, secret." />
+  <meta name="theme-color" content="#0F2A1D" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F2A1D'/%3E%3Cpath d='M9 22 L16 8 L23 22' fill='none' stroke='%23E0A93B' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='22' r='2.1' fill='%23E0A93B'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Ruka hadi yaliyomo</a>
+
+  <header class="topbar">
+    <button class="menu-toggle" type="button" aria-label="Fungua menyu ya urambazaji" aria-controls="sidebar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html" aria-label="Laetoli Data docs — nyumbani">
+      <svg class="brand-mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0F2A1D"/><path d="M9 22 L16 8 L23 22" fill="none" stroke="#E0A93B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="22" r="2.1" fill="#E0A93B"/></svg>
+      <span class="brand-name">Laetoli&nbsp;Data</span>
+    </a>
+    <span class="topbar-spacer"></span>
+    <a class="topbar-link" href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+  </header>
+
+  <div class="scrim" aria-hidden="true"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav aria-label="Urambazaji wa nyaraka">
+        <div class="side-group">
+          <h4>Anza hapa · Get started</h4>
+          <a class="side-link" href="index.html">Utangulizi · Intro</a>
+          <a class="side-link" href="quick-start.html">Quick start</a>
+          <a class="side-link" href="architecture.html">Architecture</a>
+        </div>
+        <div class="side-group">
+          <h4>SDK · @laetoli/data</h4>
+          <a class="side-link" href="auth.html">Auth</a>
+          <a class="side-link" href="database.html">Database / PostgREST</a>
+          <a class="side-link" href="storage.html">Storage</a>
+          <a class="side-link" href="realtime.html">Realtime</a>
+          <a class="side-link" href="functions.html">Edge Functions</a>
+        </div>
+        <div class="side-group">
+          <h4>Operate · Endesha</h4>
+          <a class="side-link" href="admin.html">Admin & Studio</a>
+          <a class="side-link" href="cli.html">CLI</a>
+          <a class="side-link" href="self-hosting.html">Self-hosting</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="content" id="main">
+      <article class="content-inner">
+        <p class="eyebrow">Operate · Endesha</p>
+        <h1>CLI · <code>laetoli-data</code></h1>
+        <p class="lede">A small, dependency-light command line that handles setup, the stack lifecycle, migrations, seeds, and backups.</p>
+
+        <h2>Build it once</h2>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">bash</span>
+            <button class="copy-btn" type="button" data-copy-target="code-24" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-24">cd cli &amp;&amp; npm install &amp;&amp; npm run build
+node dist/index.js &lt;command&gt;     # (symlink dist/index.js as "laetoli-data" for the short form)</code></pre>
+        </div>
+
+        <h2>Commands</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr><td><code>init</code></td><td>Create <code>.env</code> with a fresh <code>POSTGRES_PASSWORD</code> + <code>JWT_SECRET</code> (never overwrites an existing one).</td></tr>
+              <tr><td><code>up</code> / <code>down</code></td><td>Start / stop the stack. <code>down -- -v</code> also wipes the data volume.</td></tr>
+              <tr><td><code>status</code></td><td>Container status, plus a health probe of the public URL (<code>/rest/</code> and <code>/auth/health</code>).</td></tr>
+              <tr><td><code>migrate</code> / <code>migrate --status</code></td><td>Apply pending <code>db/migrations/*.sql</code> — transactional and checksum-guarded.</td></tr>
+              <tr><td><code>seed</code></td><td>Run <code>db/seed/*.sql</code>.</td></tr>
+              <tr><td><code>backup [--out f]</code></td><td><code>pg_dump</code> via Docker (timestamped file under <code>backups/</code> by default).</td></tr>
+              <tr><td><code>restore &lt;f&gt; --force</code></td><td>Restore a dump (requires <code>--force</code> — it overwrites existing data).</td></tr>
+              <tr><td><code>secret</code></td><td>Print a strong random secret (<code>--bytes N</code> to size it).</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>A typical session</h2>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">bash</span>
+            <button class="copy-btn" type="button" data-copy-target="code-25" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-25">laetoli-data init          # fresh .env with secrets
+laetoli-data up            # docker compose up -d
+laetoli-data status        # everything healthy?
+laetoli-data migrate       # apply pending migrations
+laetoli-data backup        # pg_dump -&gt; backups/laetoli_2026-06-19_02-30-00.sql</code></pre>
+        </div>
+
+                <div class="note"><span class="note-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span><div><p>Migrations are <strong>checksum-guarded</strong>: an already-applied file that later changes is rejected (you must add a <em>new</em> migration instead of editing a shipped one). <code>migrate --status</code> shows applied vs pending without changing anything.</p></div></div>
+
+        <p>The CLI speaks Swahili first (with English in parentheses) in its output — consistent with the rest of the stack.</p>
+
+        <nav class="pager" aria-label="Kurasa">
+          <a class="prev" href="admin.html"><span class="dir">← Iliyotangulia</span><span class="ttl">Admin & Studio</span></a>
+          <a class="next" href="self-hosting.html"><span class="dir">Inayofuata →</span><span class="ttl">Self-hosting</span></a>
+        </nav>
+        <footer class="docs-footer">
+          <span>Laetoli Data · sehemu ya stack sovereign ya Laetoli</span>
+          <span class="sep">·</span>
+          <a href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+          <span class="sep">·</span>
+          <a href="https://laetoli.tz" rel="noopener">laetoli.tz</a>
+          <span class="sep">·</span>
+          <span>Apache-2.0 · © 2026 Laetoli Ltd</span>
+        </footer>
+      </article>
+    </main>
+  </div>
+
+  <script src="docs.js" defer></script>
+</body>
+</html>

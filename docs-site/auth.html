@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auth · Laetoli Data docs</title>
+  <meta name="description" content="Laetoli Data auth — signUp, signInWithPassword, signInAnonymously, getUser, signOut. HS256 JWTs and the RLS model." />
+  <meta name="theme-color" content="#0F2A1D" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F2A1D'/%3E%3Cpath d='M9 22 L16 8 L23 22' fill='none' stroke='%23E0A93B' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='22' r='2.1' fill='%23E0A93B'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Ruka hadi yaliyomo</a>
+
+  <header class="topbar">
+    <button class="menu-toggle" type="button" aria-label="Fungua menyu ya urambazaji" aria-controls="sidebar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html" aria-label="Laetoli Data docs — nyumbani">
+      <svg class="brand-mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0F2A1D"/><path d="M9 22 L16 8 L23 22" fill="none" stroke="#E0A93B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="22" r="2.1" fill="#E0A93B"/></svg>
+      <span class="brand-name">Laetoli&nbsp;Data</span>
+    </a>
+    <span class="topbar-spacer"></span>
+    <a class="topbar-link" href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+  </header>
+
+  <div class="scrim" aria-hidden="true"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav aria-label="Urambazaji wa nyaraka">
+        <div class="side-group">
+          <h4>Anza hapa · Get started</h4>
+          <a class="side-link" href="index.html">Utangulizi · Intro</a>
+          <a class="side-link" href="quick-start.html">Quick start</a>
+          <a class="side-link" href="architecture.html">Architecture</a>
+        </div>
+        <div class="side-group">
+          <h4>SDK · @laetoli/data</h4>
+          <a class="side-link" href="auth.html">Auth</a>
+          <a class="side-link" href="database.html">Database / PostgREST</a>
+          <a class="side-link" href="storage.html">Storage</a>
+          <a class="side-link" href="realtime.html">Realtime</a>
+          <a class="side-link" href="functions.html">Edge Functions</a>
+        </div>
+        <div class="side-group">
+          <h4>Operate · Endesha</h4>
+          <a class="side-link" href="admin.html">Admin & Studio</a>
+          <a class="side-link" href="cli.html">CLI</a>
+          <a class="side-link" href="self-hosting.html">Self-hosting</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="content" id="main">
+      <article class="content-inner">
+        <p class="eyebrow">SDK · @laetoli/data</p>
+        <h1>Auth</h1>
+        <p class="lede">A lean, sovereign auth service: username + password, plus anonymous sign-in. It issues HS256 JWTs whose claims drive Row-Level Security.</p>
+
+        <h2>Sign up &amp; sign in</h2>
+        <p>Every method returns a supabase-shaped envelope — <code>{ data: { user, session }, error }</code>. The token is persisted automatically (localStorage in the browser, in-memory in Node) and attached to subsequent REST/storage/realtime calls.</p>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">auth.ts</span>
+            <button class="copy-btn" type="button" data-copy-target="code-5" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-5"><span class="tok-k">const</span> db = <span class="tok-f">createClient</span>(URL, { apikey: ANON });
+
+<span class="tok-c">// Create an account (identifier is username, not email).</span>
+<span class="tok-k">await</span> db.auth.<span class="tok-f">signUp</span>({ username: <span class="tok-s">'naim'</span>, password: <span class="tok-s">'••••••••'</span> });
+
+<span class="tok-c">// Log in with username + password.</span>
+<span class="tok-k">await</span> db.auth.<span class="tok-f">signInWithPassword</span>({ username: <span class="tok-s">'naim'</span>, password: <span class="tok-s">'••••••••'</span> });
+
+<span class="tok-c">// Anonymous session — a real JWT, no credentials. Great for the Pi/classroom.</span>
+<span class="tok-k">await</span> db.auth.<span class="tok-f">signInAnonymously</span>();</code></pre>
+        </div>
+
+        <h2>The current user &amp; sign-out</h2>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">session.ts</span>
+            <button class="copy-btn" type="button" data-copy-target="code-6" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-6"><span class="tok-c">// Resolve the signed-in user from the stored token (null if signed out).</span>
+<span class="tok-k">const</span> { data: { user } } = <span class="tok-k">await</span> db.auth.<span class="tok-f">getUser</span>();
+<span class="tok-c">// user => { id, username?, role?, is_anonymous? }</span>
+
+<span class="tok-c">// Clear the local session (best-effort server-side revoke).</span>
+<span class="tok-k">await</span> db.auth.<span class="tok-f">signOut</span>();
+
+<span class="tok-c">// React to sign-in / sign-out, supabase-style.</span>
+<span class="tok-k">const</span> { data: { subscription } } = db.auth.<span class="tok-f">onAuthStateChange</span>((event, session) =&gt; {
+  <span class="tok-c">// event: 'INITIAL_SESSION' | 'SIGNED_IN' | 'SIGNED_OUT'</span>
+  console.<span class="tok-f">log</span>(event, session?.user);
+});
+<span class="tok-c">// later: subscription.unsubscribe();</span></code></pre>
+        </div>
+
+        <h2>The JWT &amp; RLS model</h2>
+        <p>The auth service signs HS256 tokens with the shared <code>JWT_SECRET</code>, carrying claims <code>{ sub, role, exp }</code>. PostgREST verifies the same secret, so the token a user holds <em>is</em> their database identity:</p>
+        <ul>
+          <li><strong><code>sub</code></strong> — the user id. RLS policies compare it against an owner column (e.g. <code>user_id = auth.uid()</code>).</li>
+          <li><strong><code>role</code></strong> — <code>authenticated</code> for a signed-in user, <code>anon</code> for anonymous.</li>
+          <li><strong><code>exp</code></strong> — expiry; <code>JWT_EXPIRY</code> (default 3600s) controls token lifetime.</li>
+        </ul>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">policy.sql</span>
+            <button class="copy-btn" type="button" data-copy-target="code-7" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-7">-- The owner-scoped pattern (from the demo public.notes table):
+ALTER TABLE public.notes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY notes_owner ON public.notes
+  USING       (user_id = auth.uid())   -- can read own rows
+  WITH CHECK  (user_id = auth.uid());  -- can only write own rows</code></pre>
+        </div>
+                <div class="note"><span class="note-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span><div><p>Because the model matches Supabase exactly, existing RLS migrations port across unchanged. <code>auth.uid()</code> reads the <code>sub</code> claim from the request's verified JWT.</p></div></div>
+                <div class="note warn"><span class="note-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span><div><p><strong>Keep the secret safe.</strong> <code>JWT_SECRET</code> must be identical across the auth service and PostgREST and at least 32 characters. Losing it means you can't verify already-issued tokens; rotating it invalidates every live session.</p></div></div>
+
+        <nav class="pager" aria-label="Kurasa">
+          <a class="prev" href="architecture.html"><span class="dir">← Iliyotangulia</span><span class="ttl">Architecture</span></a>
+          <a class="next" href="database.html"><span class="dir">Inayofuata →</span><span class="ttl">Database / PostgREST</span></a>
+        </nav>
+        <footer class="docs-footer">
+          <span>Laetoli Data · sehemu ya stack sovereign ya Laetoli</span>
+          <span class="sep">·</span>
+          <a href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+          <span class="sep">·</span>
+          <a href="https://laetoli.tz" rel="noopener">laetoli.tz</a>
+          <span class="sep">·</span>
+          <span>Apache-2.0 · © 2026 Laetoli Ltd</span>
+        </footer>
+      </article>
+    </main>
+  </div>
+
+  <script src="docs.js" defer></script>
+</body>
+</html>

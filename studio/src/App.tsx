@@ -14,6 +14,7 @@ import { SqlConsole } from './screens/SqlConsole';
 import { Authentication } from './screens/Authentication';
 import { Storage } from './screens/Storage';
 import { Policies } from './screens/Policies';
+import { ApiKeys } from './screens/ApiKeys';
 import {
   BrandMark,
   IconDashboard,
@@ -22,6 +23,7 @@ import {
   IconUsers,
   IconStorage,
   IconShield,
+  IconKey,
   IconSignOut,
 } from './icons';
 
@@ -39,6 +41,7 @@ const NAV: NavEntry[] = [
   { id: 'auth', label: 'Authentication', crumb: 'Users', Icon: IconUsers },
   { id: 'storage', label: 'Storage', crumb: 'Files', Icon: IconStorage },
   { id: 'policies', label: 'Policies', crumb: 'Security', Icon: IconShield },
+  { id: 'apikeys', label: 'API Keys & Projects', crumb: 'Access', Icon: IconKey },
 ];
 
 function screenFromHash(): ScreenId {
@@ -120,6 +123,7 @@ export function App(): JSX.Element {
           {screen === 'auth' && <Authentication api={api} />}
           {screen === 'storage' && <Storage api={api} />}
           {screen === 'policies' && <Policies api={api} />}
+          {screen === 'apikeys' && <ApiKeys api={api} />}
         </div>
       </main>
     </div>

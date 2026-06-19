@@ -123,6 +123,24 @@ export function toInputString(value: unknown): string {
   return String(value);
 }
 
+/**
+ * Mask an API key for display: show the public prefix, then a fixed run of
+ * bullets standing in for the (never-displayed) secret. Never reveals the secret.
+ * Accepts either a bare prefix or a full "<prefix>.<secret>" string.
+ */
+export function maskKey(prefix: string | null | undefined): string {
+  const p = (prefix ?? '').trim();
+  const head = p.includes('.') ? p.split('.')[0] : p;
+  if (!head) return '••••••••';
+  return `${head}••••••••`;
+}
+
+/** Compact display for a request count (e.g. usage totals). */
+export function formatCount(n: number | null | undefined): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  return n.toLocaleString();
+}
+
 /** Group policies (or any keyed records) by "schema.table". */
 export function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
   const map = new Map<string, T[]>();

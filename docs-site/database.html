@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Database / PostgREST · Laetoli Data docs</title>
+  <meta name="description" content="Query and write through PostgREST with the supabase-shaped query builder — select, insert, update, delete, eq, order, limit, single." />
+  <meta name="theme-color" content="#0F2A1D" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F2A1D'/%3E%3Cpath d='M9 22 L16 8 L23 22' fill='none' stroke='%23E0A93B' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='22' r='2.1' fill='%23E0A93B'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Ruka hadi yaliyomo</a>
+
+  <header class="topbar">
+    <button class="menu-toggle" type="button" aria-label="Fungua menyu ya urambazaji" aria-controls="sidebar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html" aria-label="Laetoli Data docs — nyumbani">
+      <svg class="brand-mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0F2A1D"/><path d="M9 22 L16 8 L23 22" fill="none" stroke="#E0A93B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="22" r="2.1" fill="#E0A93B"/></svg>
+      <span class="brand-name">Laetoli&nbsp;Data</span>
+    </a>
+    <span class="topbar-spacer"></span>
+    <a class="topbar-link" href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+  </header>
+
+  <div class="scrim" aria-hidden="true"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav aria-label="Urambazaji wa nyaraka">
+        <div class="side-group">
+          <h4>Anza hapa · Get started</h4>
+          <a class="side-link" href="index.html">Utangulizi · Intro</a>
+          <a class="side-link" href="quick-start.html">Quick start</a>
+          <a class="side-link" href="architecture.html">Architecture</a>
+        </div>
+        <div class="side-group">
+          <h4>SDK · @laetoli/data</h4>
+          <a class="side-link" href="auth.html">Auth</a>
+          <a class="side-link" href="database.html">Database / PostgREST</a>
+          <a class="side-link" href="storage.html">Storage</a>
+          <a class="side-link" href="realtime.html">Realtime</a>
+          <a class="side-link" href="functions.html">Edge Functions</a>
+        </div>
+        <div class="side-group">
+          <h4>Operate · Endesha</h4>
+          <a class="side-link" href="admin.html">Admin & Studio</a>
+          <a class="side-link" href="cli.html">CLI</a>
+          <a class="side-link" href="self-hosting.html">Self-hosting</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="content" id="main">
+      <article class="content-inner">
+        <p class="eyebrow">SDK · @laetoli/data</p>
+        <h1>Database / PostgREST</h1>
+        <p class="lede">Talk to your tables and views through PostgREST with a chainable, thenable query builder that mirrors the supabase-js subset.</p>
+
+        <h2>Reading</h2>
+        <p>Start with <code>db.from(table)</code>, then chain projection, filters, ordering, and limits. The builder is awaitable — it resolves <code>{ data, error, status, statusText }</code>.</p>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">select.ts</span>
+            <button class="copy-btn" type="button" data-copy-target="code-8" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-8"><span class="tok-k">const</span> { data, error } = <span class="tok-k">await</span> db
+  .<span class="tok-f">from</span>(<span class="tok-s">'works'</span>)
+  .<span class="tok-f">select</span>(<span class="tok-s">'id, title, author_id'</span>)
+  .<span class="tok-f">eq</span>(<span class="tok-s">'type'</span>, <span class="tok-s">'pulse'</span>)
+  .<span class="tok-f">order</span>(<span class="tok-s">'created_at'</span>, { ascending: <span class="tok-k">false</span> })
+  .<span class="tok-f">limit</span>(<span class="tok-s">20</span>);
+
+<span class="tok-c">// Exactly one row (errors if not exactly 1):</span>
+<span class="tok-k">const</span> one = <span class="tok-k">await</span> db.<span class="tok-f">from</span>(<span class="tok-s">'works'</span>).<span class="tok-f">select</span>().<span class="tok-f">eq</span>(<span class="tok-s">'id'</span>, id).<span class="tok-f">single</span>();
+<span class="tok-c">// Zero-or-one (no error on 0 rows):</span>
+<span class="tok-k">const</span> maybe = <span class="tok-k">await</span> db.<span class="tok-f">from</span>(<span class="tok-s">'works'</span>).<span class="tok-f">select</span>().<span class="tok-f">eq</span>(<span class="tok-s">'id'</span>, id).<span class="tok-f">maybeSingle</span>();</code></pre>
+        </div>
+
+        <h2>Writing</h2>
+        <p>Insert / update / delete return the affected rows (PostgREST <code>Prefer: return=representation</code> is set for you). Chain <code>.select()</code> to shape what comes back.</p>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">write.ts</span>
+            <button class="copy-btn" type="button" data-copy-target="code-9" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-9"><span class="tok-c">// Insert (one row or an array of rows)</span>
+<span class="tok-k">await</span> db.<span class="tok-f">from</span>(<span class="tok-s">'notes'</span>).<span class="tok-f">insert</span>({ body: <span class="tok-s">'habari'</span> });
+
+<span class="tok-c">// Update matching rows</span>
+<span class="tok-k">await</span> db.<span class="tok-f">from</span>(<span class="tok-s">'notes'</span>).<span class="tok-f">update</span>({ body: <span class="tok-s">'mpya'</span> }).<span class="tok-f">eq</span>(<span class="tok-s">'id'</span>, id);
+
+<span class="tok-c">// Delete matching rows</span>
+<span class="tok-k">await</span> db.<span class="tok-f">from</span>(<span class="tok-s">'notes'</span>).<span class="tok-f">delete</span>().<span class="tok-f">eq</span>(<span class="tok-s">'id'</span>, id);</code></pre>
+        </div>
+
+        <h2>Filters &amp; shaping</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Method</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>eq / neq</code></td><td>equals / not equals</td></tr>
+              <tr><td><code>gt / gte / lt / lte</code></td><td>greater/less than (or equal)</td></tr>
+              <tr><td><code>like / ilike</code></td><td>pattern match (case-sensitive / insensitive)</td></tr>
+              <tr><td><code>is(col, null|true|false)</code></td><td><code>IS</code> null / boolean</td></tr>
+              <tr><td><code>in(col, [a, b])</code></td><td>value in a set</td></tr>
+              <tr><td><code>order(col, { ascending, nullsFirst })</code></td><td>sort</td></tr>
+              <tr><td><code>limit(n)</code> · <code>range(from, to)</code></td><td>page (range is inclusive)</td></tr>
+              <tr><td><code>single()</code> · <code>maybeSingle()</code></td><td>return one object instead of an array</td></tr>
+            </tbody>
+          </table>
+        </div>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">filters.ts</span>
+            <button class="copy-btn" type="button" data-copy-target="code-10" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-10"><span class="tok-k">await</span> db.<span class="tok-f">from</span>(<span class="tok-s">'works'</span>)
+  .<span class="tok-f">select</span>(<span class="tok-s">'id, title'</span>)
+  .<span class="tok-f">ilike</span>(<span class="tok-s">'title'</span>, <span class="tok-s">'%samaki%'</span>)
+  .<span class="tok-f">in</span>(<span class="tok-s">'status'</span>, [<span class="tok-s">'published'</span>, <span class="tok-s">'review'</span>])
+  .<span class="tok-f">order</span>(<span class="tok-s">'created_at'</span>, { ascending: <span class="tok-k">false</span> })
+  .<span class="tok-f">range</span>(<span class="tok-s">0</span>, <span class="tok-s">9</span>);   <span class="tok-c">// first 10 rows</span></code></pre>
+        </div>
+
+        <h2>The result envelope &amp; errors</h2>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">errors.ts</span>
+            <button class="copy-btn" type="button" data-copy-target="code-11" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-11"><span class="tok-k">const</span> { data, error, status } = <span class="tok-k">await</span> db.<span class="tok-f">from</span>(<span class="tok-s">'works'</span>).<span class="tok-f">select</span>();
+<span class="tok-k">if</span> (error) {
+  <span class="tok-c">// error => { message, details?, hint?, code? }</span>
+  console.<span class="tok-f">error</span>(error.message, error.code);
+} <span class="tok-k">else</span> {
+  <span class="tok-c">// data => rows (or a single object after .single())</span>
+}</code></pre>
+        </div>
+
+        <h2>RLS in practice</h2>
+        <p>Every request carries the signed-in user's bearer (or the anon apikey). PostgREST runs the query under that identity, so <strong>RLS is your authorization layer</strong> — policies decide which rows the query can touch. See <a class="inline" href="auth.html">Auth</a> for the owner-scoped policy pattern.</p>
+                <div class="note"><span class="note-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span><div><p>Need more schemas exposed? <code>PGRST_DB_SCHEMAS</code> defaults to <code>public</code>; comma-separate to expose more.</p></div></div>
+
+        <nav class="pager" aria-label="Kurasa">
+          <a class="prev" href="auth.html"><span class="dir">← Iliyotangulia</span><span class="ttl">Auth</span></a>
+          <a class="next" href="storage.html"><span class="dir">Inayofuata →</span><span class="ttl">Storage</span></a>
+        </nav>
+        <footer class="docs-footer">
+          <span>Laetoli Data · sehemu ya stack sovereign ya Laetoli</span>
+          <span class="sep">·</span>
+          <a href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+          <span class="sep">·</span>
+          <a href="https://laetoli.tz" rel="noopener">laetoli.tz</a>
+          <span class="sep">·</span>
+          <span>Apache-2.0 · © 2026 Laetoli Ltd</span>
+        </footer>
+      </article>
+    </main>
+  </div>
+
+  <script src="docs.js" defer></script>
+</body>
+</html>

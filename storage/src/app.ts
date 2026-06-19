@@ -22,6 +22,7 @@ import {
 } from './handlers.js';
 
 import { Registry } from './metrics.js';
+import { apikeyGuard, type ApiKeyStore } from './apikeyGuard.js';
 
 export interface AppDeps {
   db: Db;
@@ -31,6 +32,14 @@ export interface AppDeps {
   maxUploadBytes?: number;
   /** Optional shared metrics registry (defaults to a fresh one). */
   registry?: Registry;
+  /**
+   * Opt-in API-key enforcement. When false/undefined (the default) the guard is
+   * a NO-OP and all existing flows are unchanged. When true, an `apiKeyStore`
+   * MUST be provided and every request needs a valid `apikey`.
+   */
+  requireApiKey?: boolean;
+  /** DB-backed (or fake) store used by the guard when requireApiKey is true. */
+  apiKeyStore?: ApiKeyStore;
 }
 
 export function createApp(deps: AppDeps): Express {
@@ -76,6 +85,23 @@ export function createApp(deps: AppDeps): Express {
     res.send(registry.render());
   });
 
+  app.get('/health', (_req, res) => {
+    res.json({ ok: true, service: 'laetoli-storage' });
+  });
+
+  // ---- opt-in API-key enforcement (multi-tenant) -------------------------
+  // No-op unless requireApiKey is true (then apiKeyStore must be provided).
+  // Mounted AFTER /metrics + /health so observability + liveness stay open.
+  if (deps.requireApiKey) {
+    if (!deps.apiKeyStore) {
+      throw new Error(
+        'FATAL: REQUIRE_API_KEY=true lakini apiKeyStore haijatolewa. ' +
+          '(requireApiKey is on but no apiKeyStore was provided.)'
+      );
+    }
+    app.use(apikeyGuard({ require: true, store: deps.apiKeyStore }));
+  }
+
   // JSON only for the metadata/bucket/sign endpoints. Object bodies are read as
   // raw streams (no body parser) so uploads never buffer fully in memory.
   const json = express.json({ limit: '64kb' });
@@ -108,10 +134,6 @@ export function createApp(deps: AppDeps): Express {
   // The `*` wildcard captures the object path (everything after :bucket).
   const objectPath = (req: Request): string =>
     (req.params[0] as string) ?? '';
-
-  app.get('/health', (_req, res) => {
-    res.json({ ok: true, service: 'laetoli-storage' });
-  });
 
   // ---- buckets ------------------------------------------------------------
   app.post('/bucket', json, async (req, res, next) => {

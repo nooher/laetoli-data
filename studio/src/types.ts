@@ -105,10 +105,47 @@ export interface Stats {
   db_size_pretty: string;
 }
 
+export type ApiKeyRole = 'anon' | 'service';
+
+export interface Project {
+  id: string;
+  name: string;
+  created_at?: string | null;
+}
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  role: ApiKeyRole;
+  key_prefix: string;
+  rate_limit_per_min?: number | null;
+  created_at?: string | null;
+  revoked_at?: string | null;
+}
+
+/** Returned ONCE from POST /projects/:id/keys — includes the full secret. */
+export interface CreatedApiKey extends ApiKey {
+  /** Full secret in "<prefix>.<secret>" form. Shown to the operator only once. */
+  apikey: string;
+}
+
+export interface KeyUsage {
+  key_id: string;
+  name?: string | null;
+  requests?: number | null;
+  last_used_at?: string | null;
+  [key: string]: unknown;
+}
+
+export interface UsageResponse {
+  usage: KeyUsage[];
+}
+
 export type ScreenId =
   | 'dashboard'
   | 'tables'
   | 'sql'
   | 'auth'
   | 'storage'
-  | 'policies';
+  | 'policies'
+  | 'apikeys';

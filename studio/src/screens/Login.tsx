@@ -73,6 +73,10 @@ export function Login({ onSignedIn }: { onSignedIn: (c: Credentials) => void }):
               placeholder="ADMIN_API_KEY"
               autoFocus
             />
+            <p className="hint">
+              This is a <strong>service-role key</strong> — keep it secret. It grants
+              full admin access and is stored only in this browser tab&rsquo;s session.
+            </p>
           </div>
           <div className="field">
             <label htmlFor="baseUrl">API base URL</label>

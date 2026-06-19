@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin & Studio · Laetoli Data docs</title>
+  <meta name="description" content="The admin API and the /studio/ dashboard — table editor, SQL console, auth/storage/RLS browsing, gated by ADMIN_API_KEY." />
+  <meta name="theme-color" content="#0F2A1D" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F2A1D'/%3E%3Cpath d='M9 22 L16 8 L23 22' fill='none' stroke='%23E0A93B' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='22' r='2.1' fill='%23E0A93B'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Ruka hadi yaliyomo</a>
+
+  <header class="topbar">
+    <button class="menu-toggle" type="button" aria-label="Fungua menyu ya urambazaji" aria-controls="sidebar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html" aria-label="Laetoli Data docs — nyumbani">
+      <svg class="brand-mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0F2A1D"/><path d="M9 22 L16 8 L23 22" fill="none" stroke="#E0A93B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="22" r="2.1" fill="#E0A93B"/></svg>
+      <span class="brand-name">Laetoli&nbsp;Data</span>
+    </a>
+    <span class="topbar-spacer"></span>
+    <a class="topbar-link" href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+  </header>
+
+  <div class="scrim" aria-hidden="true"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav aria-label="Urambazaji wa nyaraka">
+        <div class="side-group">
+          <h4>Anza hapa · Get started</h4>
+          <a class="side-link" href="index.html">Utangulizi · Intro</a>
+          <a class="side-link" href="quick-start.html">Quick start</a>
+          <a class="side-link" href="architecture.html">Architecture</a>
+        </div>
+        <div class="side-group">
+          <h4>SDK · @laetoli/data</h4>
+          <a class="side-link" href="auth.html">Auth</a>
+          <a class="side-link" href="database.html">Database / PostgREST</a>
+          <a class="side-link" href="storage.html">Storage</a>
+          <a class="side-link" href="realtime.html">Realtime</a>
+          <a class="side-link" href="functions.html">Edge Functions</a>
+        </div>
+        <div class="side-group">
+          <h4>Operate · Endesha</h4>
+          <a class="side-link" href="admin.html">Admin & Studio</a>
+          <a class="side-link" href="cli.html">CLI</a>
+          <a class="side-link" href="self-hosting.html">Self-hosting</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="content" id="main">
+      <article class="content-inner">
+        <p class="eyebrow">Operate · Endesha</p>
+        <h1>Admin &amp; Studio</h1>
+        <p class="lede">A sovereign dashboard for your backend — browse tables, run SQL, manage auth and storage, and read RLS policies. No SaaS console, no telemetry leaving your box.</p>
+
+        <h2>The Admin Studio</h2>
+        <p>The Studio is a Vite+React app served behind Caddy at <code>/studio/</code>. Open it and paste your <code>ADMIN_API_KEY</code> to sign in.</p>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">open-studio</span>
+            <button class="copy-btn" type="button" data-copy-target="code-22" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-22">http://localhost:8088/studio/</code></pre>
+        </div>
+        <p>It gives you:</p>
+        <ul>
+          <li><strong>Table Editor</strong> — browse and edit rows.</li>
+          <li><strong>SQL Console</strong> — run arbitrary SQL.</li>
+          <li><strong>Auth</strong> — view users in <code>auth.users</code>.</li>
+          <li><strong>Storage browser</strong> — buckets and objects.</li>
+          <li><strong>RLS Policies viewer</strong> — see the policies on each table.</li>
+          <li><strong>Stats</strong> — at-a-glance counts and sizes.</li>
+        </ul>
+
+        <h2>The admin API</h2>
+        <p>Behind the Studio is the admin service (<code>/admin/*</code>, port 9996): schema introspection, table CRUD, the SQL console, RLS-policy / roles / users / storage browsing, and <code>/stats</code>. Every request is gated by the <code>ADMIN_API_KEY</code> "service-role key".</p>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">admin-api.sh</span>
+            <button class="copy-btn" type="button" data-copy-target="code-23" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-23"># All admin calls carry the service-role key.
+curl https://data.yourorg.tz/admin/stats \
+  -H "Authorization: Bearer $ADMIN_API_KEY"
+
+curl -X POST https://data.yourorg.tz/admin/sql \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"sql":"select count(*) from public.notes"}'</code></pre>
+        </div>
+
+                <div class="note warn"><span class="note-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span><div><p><strong>The keys to the kingdom.</strong> The admin service connects to Postgres as <code>laetoli_admin_login</code>, which <code>BYPASSRLS</code> — it sees every row. Guard <code>ADMIN_API_KEY</code> like a root password: keep it server-side, never ship it to a browser app, and rotate it if exposed.</p></div></div>
+
+        <nav class="pager" aria-label="Kurasa">
+          <a class="prev" href="functions.html"><span class="dir">← Iliyotangulia</span><span class="ttl">Edge Functions</span></a>
+          <a class="next" href="cli.html"><span class="dir">Inayofuata →</span><span class="ttl">CLI</span></a>
+        </nav>
+        <footer class="docs-footer">
+          <span>Laetoli Data · sehemu ya stack sovereign ya Laetoli</span>
+          <span class="sep">·</span>
+          <a href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+          <span class="sep">·</span>
+          <a href="https://laetoli.tz" rel="noopener">laetoli.tz</a>
+          <span class="sep">·</span>
+          <span>Apache-2.0 · © 2026 Laetoli Ltd</span>
+        </footer>
+      </article>
+    </main>
+  </div>
+
+  <script src="docs.js" defer></script>
+</body>
+</html>

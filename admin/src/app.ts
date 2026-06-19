@@ -18,6 +18,13 @@ import {
   handleBuckets,
   handleObjects,
   handleStats,
+  handleListProjects,
+  handleCreateProject,
+  handleDeleteProject,
+  handleListKeys,
+  handleCreateKey,
+  handleRevokeKey,
+  handleUsage,
   type HandlerDeps,
 } from './handlers.js';
 
@@ -147,6 +154,63 @@ export function createApp(deps: AppDeps): Express {
   app.get('/stats', async (_req, res, next) => {
     try {
       send(res, await handleStats(handlerDeps));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---- API keys / projects / quotas (multi-tenant) ------------------------
+  app.get('/projects', async (_req, res, next) => {
+    try {
+      send(res, await handleListProjects(handlerDeps));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.post('/projects', async (req, res, next) => {
+    try {
+      send(res, await handleCreateProject(handlerDeps, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.delete('/projects/:id', async (req, res, next) => {
+    try {
+      send(res, await handleDeleteProject(handlerDeps, req.params.id));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.get('/projects/:id/keys', async (req, res, next) => {
+    try {
+      send(res, await handleListKeys(handlerDeps, req.params.id));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.post('/projects/:id/keys', async (req, res, next) => {
+    try {
+      send(res, await handleCreateKey(handlerDeps, req.params.id, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.delete('/keys/:id', async (req, res, next) => {
+    try {
+      send(res, await handleRevokeKey(handlerDeps, req.params.id));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.get('/usage', async (req, res, next) => {
+    try {
+      send(res, await handleUsage(handlerDeps, req.query));
     } catch (e) {
       next(e);
     }

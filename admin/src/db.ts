@@ -85,6 +85,43 @@ export interface Stats {
   db_size_pretty: string;
 }
 
+// -- API keys / projects / quotas ---------------------------------------------
+
+export interface ProjectRow {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+/** A key row WITHOUT the secret (key_hash is never returned to clients). */
+export interface ApiKeyRow {
+  id: string;
+  project_id: string;
+  name: string | null;
+  role: 'anon' | 'service';
+  key_prefix: string;
+  rate_limit_per_min: number;
+  created_at: string;
+  revoked_at: string | null;
+}
+
+export interface NewApiKey {
+  projectId: string;
+  name: string | null;
+  role: 'anon' | 'service';
+  keyPrefix: string;
+  keyHash: string;
+  rateLimitPerMin: number;
+}
+
+export interface UsageRow {
+  key_id: string;
+  key_prefix: string;
+  key_name: string | null;
+  day: string;
+  count: number;
+}
+
 /** Raw result of a SQL-console query. */
 export interface QueryResult {
   rows: Record<string, unknown>[];
@@ -154,6 +191,16 @@ export interface Db {
   listBuckets(): Promise<BucketInfo[]>;
   listObjects(bucket: string | undefined, limit: number): Promise<ObjectInfo[]>;
   stats(): Promise<Stats>;
+
+  // API keys / projects / quotas
+  listProjects(): Promise<ProjectRow[]>;
+  createProject(name: string): Promise<ProjectRow>;
+  deleteProject(id: string): Promise<boolean>;
+  getProject(id: string): Promise<ProjectRow | null>;
+  listKeys(projectId: string): Promise<ApiKeyRow[]>;
+  createKey(input: NewApiKey): Promise<ApiKeyRow>;
+  revokeKey(id: string): Promise<ApiKeyRow | null>;
+  listUsage(projectId: string | undefined): Promise<UsageRow[]>;
 
   close(): Promise<void>;
 }
@@ -586,6 +633,102 @@ export function createPgDb(config: AdminConfig): Db {
         objects,
         db_size_pretty: dbSize,
       };
+    },
+
+    // -- API keys / projects / quotas ----------------------------------------
+
+    async listProjects(): Promise<ProjectRow[]> {
+      const { rows } = await pool.query<ProjectRow>(
+        `SELECT id, name, created_at FROM keys.projects ORDER BY created_at`
+      );
+      return rows;
+    },
+
+    async getProject(id): Promise<ProjectRow | null> {
+      const { rows } = await pool.query<ProjectRow>(
+        `SELECT id, name, created_at FROM keys.projects WHERE id = $1`,
+        [id]
+      );
+      return rows[0] ?? null;
+    },
+
+    async createProject(name): Promise<ProjectRow> {
+      const { rows } = await pool.query<ProjectRow>(
+        `INSERT INTO keys.projects (name) VALUES ($1)
+           RETURNING id, name, created_at`,
+        [name]
+      );
+      return rows[0];
+    },
+
+    async deleteProject(id): Promise<boolean> {
+      const res = await pool.query(`DELETE FROM keys.projects WHERE id = $1`, [id]);
+      return (res.rowCount ?? 0) > 0;
+    },
+
+    async listKeys(projectId): Promise<ApiKeyRow[]> {
+      // NEVER select key_hash.
+      const { rows } = await pool.query<ApiKeyRow>(
+        `SELECT id, project_id, name, role, key_prefix, rate_limit_per_min,
+                created_at, revoked_at
+           FROM keys.api_keys
+          WHERE project_id = $1
+          ORDER BY created_at DESC`,
+        [projectId]
+      );
+      return rows;
+    },
+
+    async createKey(input): Promise<ApiKeyRow> {
+      const { rows } = await pool.query<ApiKeyRow>(
+        `INSERT INTO keys.api_keys
+           (project_id, name, role, key_prefix, key_hash, rate_limit_per_min)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, project_id, name, role, key_prefix, rate_limit_per_min,
+                   created_at, revoked_at`,
+        [
+          input.projectId,
+          input.name,
+          input.role,
+          input.keyPrefix,
+          input.keyHash,
+          input.rateLimitPerMin,
+        ]
+      );
+      return rows[0];
+    },
+
+    async revokeKey(id): Promise<ApiKeyRow | null> {
+      const { rows } = await pool.query<ApiKeyRow>(
+        `UPDATE keys.api_keys
+            SET revoked_at = now()
+          WHERE id = $1 AND revoked_at IS NULL
+        RETURNING id, project_id, name, role, key_prefix, rate_limit_per_min,
+                  created_at, revoked_at`,
+        [id]
+      );
+      return rows[0] ?? null;
+    },
+
+    async listUsage(projectId): Promise<UsageRow[]> {
+      if (projectId) {
+        const { rows } = await pool.query<UsageRow>(
+          `SELECT u.key_id, k.key_prefix, k.name AS key_name, u.day, u.count
+             FROM keys.usage u
+             JOIN keys.api_keys k ON k.id = u.key_id
+            WHERE k.project_id = $1
+            ORDER BY u.day DESC, k.key_prefix`,
+          [projectId]
+        );
+        return rows;
+      }
+      const { rows } = await pool.query<UsageRow>(
+        `SELECT u.key_id, k.key_prefix, k.name AS key_name, u.day, u.count
+           FROM keys.usage u
+           JOIN keys.api_keys k ON k.id = u.key_id
+          ORDER BY u.day DESC, k.key_prefix`
+      );
+      return rows;
     },
 
     async close() {

@@ -9,6 +9,12 @@ export interface StorageConfig {
   storageRoot: string;
   /** Max upload size in bytes (default 50 MiB — friendly to a Pi). */
   maxUploadBytes: number;
+  /**
+   * Opt-in API-key enforcement (multi-tenant). Default false → the apikeyGuard
+   * is a no-op and all existing flows are unchanged. Set REQUIRE_API_KEY=true
+   * to require a valid `apikey` header/query on every request.
+   */
+  requireApiKey: boolean;
   // Postgres connection: prefer DATABASE_URL, else POSTGRES_* parts.
   databaseUrl?: string;
   pg: {
@@ -56,6 +62,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): StorageConfig 
     port,
     storageRoot: env.STORAGE_ROOT ?? '/data/storage',
     maxUploadBytes,
+    requireApiKey: (env.REQUIRE_API_KEY ?? 'false').toLowerCase() === 'true',
     databaseUrl: env.DATABASE_URL,
     pg: {
       host: env.POSTGRES_HOST ?? 'db',

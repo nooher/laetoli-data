@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Edge Functions · Laetoli Data docs</title>
+  <meta name="description" content="Author serverless handlers, invoke them with functions.invoke(name, { body }), and the ctx shape." />
+  <meta name="theme-color" content="#0F2A1D" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F2A1D'/%3E%3Cpath d='M9 22 L16 8 L23 22' fill='none' stroke='%23E0A93B' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='22' r='2.1' fill='%23E0A93B'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Ruka hadi yaliyomo</a>
+
+  <header class="topbar">
+    <button class="menu-toggle" type="button" aria-label="Fungua menyu ya urambazaji" aria-controls="sidebar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html" aria-label="Laetoli Data docs — nyumbani">
+      <svg class="brand-mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0F2A1D"/><path d="M9 22 L16 8 L23 22" fill="none" stroke="#E0A93B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="22" r="2.1" fill="#E0A93B"/></svg>
+      <span class="brand-name">Laetoli&nbsp;Data</span>
+    </a>
+    <span class="topbar-spacer"></span>
+    <a class="topbar-link" href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+  </header>
+
+  <div class="scrim" aria-hidden="true"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav aria-label="Urambazaji wa nyaraka">
+        <div class="side-group">
+          <h4>Anza hapa · Get started</h4>
+          <a class="side-link" href="index.html">Utangulizi · Intro</a>
+          <a class="side-link" href="quick-start.html">Quick start</a>
+          <a class="side-link" href="architecture.html">Architecture</a>
+        </div>
+        <div class="side-group">
+          <h4>SDK · @laetoli/data</h4>
+          <a class="side-link" href="auth.html">Auth</a>
+          <a class="side-link" href="database.html">Database / PostgREST</a>
+          <a class="side-link" href="storage.html">Storage</a>
+          <a class="side-link" href="realtime.html">Realtime</a>
+          <a class="side-link" href="functions.html">Edge Functions</a>
+        </div>
+        <div class="side-group">
+          <h4>Operate · Endesha</h4>
+          <a class="side-link" href="admin.html">Admin & Studio</a>
+          <a class="side-link" href="cli.html">CLI</a>
+          <a class="side-link" href="self-hosting.html">Self-hosting</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="content" id="main">
+      <article class="content-inner">
+        <p class="eyebrow">SDK · @laetoli/data</p>
+        <h1>Edge Functions</h1>
+        <p class="lede">Operator-provided serverless handlers, served behind Caddy at <code>/functions/&lt;name&gt;</code>. A function default-exports an async handler that takes a <code>ctx</code> and returns JSON (or a Response-like object).</p>
+
+        <h2>Author a handler</h2>
+        <p>Drop a <code>.ts</code>/<code>.js</code> file into the functions root. The filename becomes the route. Return a bare value for a <code>200</code> JSON response, or a <code>{ status, headers, body }</code> envelope for full control.</p>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">functions/src/hello.ts</span>
+            <button class="copy-btn" type="button" data-copy-target="code-19" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-19"><span class="tok-c">// GET /functions/hello?jina=Asha</span>
+<span class="tok-k">export default async function</span> <span class="tok-f">hello</span>(ctx) {
+  <span class="tok-k">const</span> jina = <span class="tok-k">typeof</span> ctx.query.jina === <span class="tok-s">'string'</span> ? ctx.query.jina : <span class="tok-s">'Dunia'</span>;
+  <span class="tok-k">return</span> { message: <span class="tok-s">'Habari, '</span> + jina };   <span class="tok-c">// bare value → 200 application/json</span>
+}</code></pre>
+        </div>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">functions/src/whoami.ts</span>
+            <button class="copy-btn" type="button" data-copy-target="code-20" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-20"><span class="tok-c">// GET /functions/whoami  (needs a valid Bearer token)</span>
+<span class="tok-k">export default async function</span> <span class="tok-f">whoami</span>(ctx) {
+  <span class="tok-k">if</span> (!ctx.user) <span class="tok-k">return</span> { status: <span class="tok-s">401</span>, body: { error: <span class="tok-s">'Hujaingia.'</span> } };
+  <span class="tok-k">return</span> ctx.user;                          <span class="tok-c">// { sub, role }</span>
+}</code></pre>
+        </div>
+
+        <h2>Invoke from an app</h2>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">invoke.ts</span>
+            <button class="copy-btn" type="button" data-copy-target="code-21" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-21"><span class="tok-k">const</span> { data, error } = <span class="tok-k">await</span> db.functions.<span class="tok-f">invoke</span>(<span class="tok-s">'hello'</span>, {
+  body: { jina: <span class="tok-s">'Asha'</span> },   <span class="tok-c">// objects are JSON-encoded; strings sent as-is</span>
+  method: <span class="tok-s">'POST'</span>,           <span class="tok-c">// defaults to POST</span>
+});
+<span class="tok-c">// The signed-in bearer is attached automatically when present.</span></code></pre>
+        </div>
+
+        <h2>The context (<code>ctx</code>)</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Field</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>ctx.method</code></td><td>HTTP method (<code>GET</code>, <code>POST</code>, …)</td></tr>
+              <tr><td><code>ctx.headers</code></td><td>lower-cased request headers</td></tr>
+              <tr><td><code>ctx.query</code></td><td>parsed query string (<code>{ jina: 'Asha' }</code>)</td></tr>
+              <tr><td><code>ctx.body</code></td><td>parsed JSON body (or raw text for non-JSON)</td></tr>
+              <tr><td><code>ctx.env</code></td><td>environment bag (<code>ctx.env.MY_SETTING</code>)</td></tr>
+              <tr><td><code>ctx.user</code></td><td><code>{ sub, role }</code> if a valid Bearer is present, else <code>null</code></td></tr>
+              <tr><td><code>ctx.path</code></td><td>trailing path after <code>/&lt;name&gt;</code> (e.g. <code>/a/b</code>), or <code>""</code></td></tr>
+              <tr><td><code>ctx.signal</code></td><td>an <code>AbortSignal</code> that fires when the timeout is reached</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>For editor types: <code>import type { FunctionContext, FunctionResult } from '@laetoli/functions';</code></p>
+
+        <h2>Return shapes &amp; behaviour</h2>
+        <ul>
+          <li><strong>Bare JSON value</strong> (object, array, string, number…) → <code>200</code> JSON.</li>
+          <li><strong><code>{ status?, headers?, body }</code></strong> → that exact status/headers/body.</li>
+          <li><strong><code>undefined</code></strong> → <code>204 No Content</code>.</li>
+          <li>Exceeding <code>FUNCTION_TIMEOUT_MS</code> (default 10000) → <code>504</code>; a thrown error → a clean <code>500</code>.</li>
+        </ul>
+
+                <div class="note warn"><span class="note-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span><div><p><strong>Trust model.</strong> Functions are operator-provided and <em>trusted</em> — they run in the same Node process as the runner (no sandbox). Only deploy code you wrote or audited. Today's guarantees are a per-invocation timeout and a request body-size cap, not isolation; stronger isolation is a planned v2 option.</p></div></div>
+
+        <nav class="pager" aria-label="Kurasa">
+          <a class="prev" href="realtime.html"><span class="dir">← Iliyotangulia</span><span class="ttl">Realtime</span></a>
+          <a class="next" href="admin.html"><span class="dir">Inayofuata →</span><span class="ttl">Admin & Studio</span></a>
+        </nav>
+        <footer class="docs-footer">
+          <span>Laetoli Data · sehemu ya stack sovereign ya Laetoli</span>
+          <span class="sep">·</span>
+          <a href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+          <span class="sep">·</span>
+          <a href="https://laetoli.tz" rel="noopener">laetoli.tz</a>
+          <span class="sep">·</span>
+          <span>Apache-2.0 · © 2026 Laetoli Ltd</span>
+        </footer>
+      </article>
+    </main>
+  </div>
+
+  <script src="docs.js" defer></script>
+</body>
+</html>

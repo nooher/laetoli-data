@@ -15,6 +15,7 @@ import {
   parseOrder,
   isPlainObject,
 } from './validation.js';
+import { mintKey } from './apikeys.js';
 
 export interface HandlerDeps {
   db: Db;
@@ -272,4 +273,157 @@ export async function handleObjects(
 export async function handleStats(deps: HandlerDeps): Promise<HandlerResult> {
   const stats = await deps.db.stats();
   return { status: 200, body: stats };
+}
+
+// -- API keys / projects / quotas ---------------------------------------------
+
+const VALID_ROLES = ['anon', 'service'] as const;
+
+export async function handleListProjects(deps: HandlerDeps): Promise<HandlerResult> {
+  const projects = await deps.db.listProjects();
+  return { status: 200, body: { projects } };
+}
+
+export async function handleCreateProject(
+  deps: HandlerDeps,
+  body: unknown
+): Promise<HandlerResult> {
+  if (!isPlainObject(body) || typeof body.name !== 'string' || body.name.trim() === '') {
+    return { status: 400, body: err('`name` inahitajika. (`name` is required.)') };
+  }
+  const name = body.name.trim();
+  try {
+    const project = await deps.db.createProject(name);
+    return { status: 201, body: { project } };
+  } catch (e) {
+    // Unique-violation → 409 (project name already taken).
+    const code = e && typeof e === 'object' && 'code' in e ? (e as { code?: unknown }).code : undefined;
+    if (code === '23505') {
+      return { status: 409, body: err('Jina la mradi tayari lipo. (Project name already exists.)') };
+    }
+    throw e;
+  }
+}
+
+export async function handleDeleteProject(
+  deps: HandlerDeps,
+  id: string
+): Promise<HandlerResult> {
+  if (typeof id !== 'string' || id.trim() === '') {
+    return { status: 400, body: err('Kitambulisho cha mradi kinahitajika. (Project id required.)') };
+  }
+  const ok = await deps.db.deleteProject(id);
+  if (!ok) {
+    return { status: 404, body: err('Mradi haupatikani. (Project not found.)') };
+  }
+  return { status: 200, body: { deleted: true, id } };
+}
+
+export async function handleListKeys(
+  deps: HandlerDeps,
+  projectId: string
+): Promise<HandlerResult> {
+  if (typeof projectId !== 'string' || projectId.trim() === '') {
+    return { status: 400, body: err('Kitambulisho cha mradi kinahitajika. (Project id required.)') };
+  }
+  const project = await deps.db.getProject(projectId);
+  if (!project) {
+    return { status: 404, body: err('Mradi haupatikani. (Project not found.)') };
+  }
+  const keys = await deps.db.listKeys(projectId);
+  return { status: 200, body: { keys } };
+}
+
+export async function handleCreateKey(
+  deps: HandlerDeps,
+  projectId: string,
+  body: unknown
+): Promise<HandlerResult> {
+  if (typeof projectId !== 'string' || projectId.trim() === '') {
+    return { status: 400, body: err('Kitambulisho cha mradi kinahitajika. (Project id required.)') };
+  }
+  if (!isPlainObject(body)) {
+    return { status: 400, body: err('Mwili wa ombi lazima uwe object. (Body must be an object.)') };
+  }
+  const role = body.role;
+  if (role !== 'anon' && role !== 'service') {
+    return {
+      status: 400,
+      body: err("`role` lazima iwe 'anon' au 'service'. (`role` must be 'anon' or 'service'.)"),
+    };
+  }
+  const name =
+    typeof body.name === 'string' && body.name.trim() !== '' ? body.name.trim() : null;
+
+  let rateLimitPerMin = 120;
+  if (body.rate_limit_per_min !== undefined) {
+    const n = Number(body.rate_limit_per_min);
+    if (!Number.isInteger(n) || n <= 0) {
+      return {
+        status: 400,
+        body: err('`rate_limit_per_min` lazima iwe namba chanya. (must be a positive integer.)'),
+      };
+    }
+    rateLimitPerMin = n;
+  }
+
+  const project = await deps.db.getProject(projectId);
+  if (!project) {
+    return { status: 404, body: err('Mradi haupatikani. (Project not found.)') };
+  }
+
+  const minted = mintKey();
+  const row = await deps.db.createKey({
+    projectId,
+    name,
+    role: role as (typeof VALID_ROLES)[number],
+    keyPrefix: minted.prefix,
+    keyHash: minted.hash,
+    rateLimitPerMin,
+  });
+
+  // The full key is returned EXACTLY ONCE. It is never stored or retrievable.
+  return {
+    status: 201,
+    body: {
+      id: row.id,
+      project_id: row.project_id,
+      name: row.name,
+      role: row.role,
+      key_prefix: row.key_prefix,
+      rate_limit_per_min: row.rate_limit_per_min,
+      created_at: row.created_at,
+      apikey: minted.apikey,
+    },
+  };
+}
+
+export async function handleRevokeKey(
+  deps: HandlerDeps,
+  id: string
+): Promise<HandlerResult> {
+  if (typeof id !== 'string' || id.trim() === '') {
+    return { status: 400, body: err('Kitambulisho cha ufunguo kinahitajika. (Key id required.)') };
+  }
+  const row = await deps.db.revokeKey(id);
+  if (!row) {
+    return {
+      status: 404,
+      body: err('Ufunguo haupatikani au tayari umefutwa. (Key not found or already revoked.)'),
+    };
+  }
+  return { status: 200, body: { revoked: true, id: row.id, revoked_at: row.revoked_at } };
+}
+
+export async function handleUsage(
+  deps: HandlerDeps,
+  query: { project_id?: unknown }
+): Promise<HandlerResult> {
+  const projectId =
+    typeof query.project_id === 'string' && query.project_id.trim() !== ''
+      ? query.project_id
+      : undefined;
+  const rows = await deps.db.listUsage(projectId);
+  const total = rows.reduce((sum, r) => sum + Number(r.count), 0);
+  return { status: 200, body: { usage: rows, total } };
 }

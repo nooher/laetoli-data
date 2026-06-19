@@ -75,6 +75,20 @@ export const IconSignOut = base(
   </>,
 );
 
+export const IconKey = base(
+  <>
+    <circle cx="8" cy="15" r="4.2" />
+    <path d="M11 12l8.5-8.5M16 6l2.5 2.5M14 8l2.5 2.5" />
+  </>,
+);
+
+export const IconCopy = base(
+  <>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </>,
+);
+
 export const IconPlus = base(<path d="M12 5v14M5 12h14" />);
 export const IconTrash = base(
   <>

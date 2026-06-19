@@ -16,6 +16,10 @@ import type {
   ObjectInfo,
   Stats,
   SchemaInfo,
+  ProjectRow,
+  ApiKeyRow,
+  NewApiKey,
+  UsageRow,
 } from '../db.js';
 
 interface FakeTable {
@@ -86,6 +90,16 @@ export function createFakeDb(): FakeDb {
   ];
 
   let pendingError: { message: string; code?: string } | null = null;
+
+  // API keys / projects / quotas state. Seed a "default" project.
+  const projects: ProjectRow[] = [
+    { id: 'p-default', name: 'default', created_at: '2026-01-01T00:00:00Z' },
+  ];
+  interface FakeKey extends ApiKeyRow {
+    key_hash: string;
+  }
+  const apiKeys: FakeKey[] = [];
+  const usage: UsageRow[] = [];
 
   return {
     tables,
@@ -254,6 +268,89 @@ export function createFakeDb(): FakeDb {
         objects: objects.length,
         db_size_pretty: '8192 kB',
       };
+    },
+
+    // -- API keys / projects / quotas ----------------------------------------
+
+    async listProjects(): Promise<ProjectRow[]> {
+      return projects.map((p) => ({ ...p }));
+    },
+
+    async getProject(id): Promise<ProjectRow | null> {
+      const p = projects.find((x) => x.id === id);
+      return p ? { ...p } : null;
+    },
+
+    async createProject(name): Promise<ProjectRow> {
+      if (projects.some((p) => p.name === name)) {
+        const e = new Error('duplicate key') as Error & { code: string };
+        e.code = '23505';
+        throw e;
+      }
+      const row: ProjectRow = {
+        id: `p-${randomUUID()}`,
+        name,
+        created_at: new Date().toISOString(),
+      };
+      projects.push(row);
+      return { ...row };
+    },
+
+    async deleteProject(id): Promise<boolean> {
+      const i = projects.findIndex((p) => p.id === id);
+      if (i === -1) return false;
+      projects.splice(i, 1);
+      // Cascade keys + usage, like the FK ON DELETE CASCADE.
+      for (let j = apiKeys.length - 1; j >= 0; j--) {
+        if (apiKeys[j].project_id === id) {
+          const kid = apiKeys[j].id;
+          apiKeys.splice(j, 1);
+          for (let u = usage.length - 1; u >= 0; u--) {
+            if (usage[u].key_id === kid) usage.splice(u, 1);
+          }
+        }
+      }
+      return true;
+    },
+
+    async listKeys(projectId): Promise<ApiKeyRow[]> {
+      // NEVER return key_hash.
+      return apiKeys
+        .filter((k) => k.project_id === projectId)
+        .map(({ key_hash: _omit, ...rest }) => ({ ...rest }));
+    },
+
+    async createKey(input: NewApiKey): Promise<ApiKeyRow> {
+      const row: FakeKey = {
+        id: `k-${randomUUID()}`,
+        project_id: input.projectId,
+        name: input.name,
+        role: input.role,
+        key_prefix: input.keyPrefix,
+        key_hash: input.keyHash,
+        rate_limit_per_min: input.rateLimitPerMin,
+        created_at: new Date().toISOString(),
+        revoked_at: null,
+      };
+      apiKeys.push(row);
+      const { key_hash: _omit, ...rest } = row;
+      return { ...rest };
+    },
+
+    async revokeKey(id): Promise<ApiKeyRow | null> {
+      const k = apiKeys.find((x) => x.id === id && x.revoked_at === null);
+      if (!k) return null;
+      k.revoked_at = new Date().toISOString();
+      const { key_hash: _omit, ...rest } = k;
+      return { ...rest };
+    },
+
+    async listUsage(projectId): Promise<UsageRow[]> {
+      if (!projectId) return usage.map((u) => ({ ...u }));
+      const keyIds = new Set(
+        apiKeys.filter((k) => k.project_id === projectId).map((k) => k.id)
+      );
+      return usage.filter((u) => keyIds.has(u.key_id)).map((u) => ({ ...u }));
     },
 
     async close() {

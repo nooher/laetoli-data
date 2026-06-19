@@ -6,6 +6,7 @@ import express, { type Express, type Request, type Response } from 'express';
 import { FunctionLoader, FunctionNotFoundError, InvalidFunctionError } from './loader.js';
 import { runHandler, FunctionTimeoutError } from './runner.js';
 import { userFromAuthHeader } from './jwt.js';
+import { apikeyGuard, type ApiKeyStore } from './apikeyGuard.js';
 
 export interface AppDeps {
   loader: FunctionLoader;
@@ -19,6 +20,14 @@ export interface AppDeps {
   production?: boolean;
   /** env bag exposed to functions as ctx.env (defaults to process.env). */
   env?: Record<string, string | undefined>;
+  /**
+   * Opt-in API-key enforcement. When false/undefined (the default) the guard is
+   * a NO-OP and all existing flows are unchanged. When true, an `apiKeyStore`
+   * MUST be provided and every invocation needs a valid `apikey`.
+   */
+  requireApiKey?: boolean;
+  /** DB-backed (or fake) store used by the guard when requireApiKey is true. */
+  apiKeyStore?: ApiKeyStore;
 }
 
 export function createApp(deps: AppDeps): Express {
@@ -49,6 +58,19 @@ export function createApp(deps: AppDeps): Express {
     deps.loader.clear(name);
     res.json({ ok: true, reloaded: name ?? 'all' });
   });
+
+  // --- opt-in API-key enforcement (multi-tenant) --------------------------
+  // No-op unless requireApiKey is true (then apiKeyStore must be provided).
+  // Mounted AFTER the meta routes (/health, /, /_reload) so they stay open.
+  if (deps.requireApiKey) {
+    if (!deps.apiKeyStore) {
+      throw new Error(
+        'FATAL: REQUIRE_API_KEY=true lakini apiKeyStore haijatolewa. ' +
+          '(requireApiKey is on but no apiKeyStore was provided.)'
+      );
+    }
+    app.use(apikeyGuard({ require: true, store: deps.apiKeyStore }));
+  }
 
   // --- dispatch -----------------------------------------------------------
 

@@ -8,16 +8,21 @@
 
 import { joinUrl, normalizeBaseUrl } from './lib';
 import type {
+  ApiKey,
+  ApiKeyRole,
   AuthUsersResponse,
   Bucket,
+  CreatedApiKey,
   HealthResponse,
   PoliciesResponse,
+  Project,
   Role,
   SchemaResponse,
   SqlResult,
   Stats,
   StorageObject,
   TableRows,
+  UsageResponse,
 } from './types';
 
 const KEY_STORAGE = 'laetoli.studio.adminKey';
@@ -213,6 +218,46 @@ export class AdminApi {
     q.set('bucket', bucket);
     if (opts.limit != null) q.set('limit', String(opts.limit));
     return this.request<{ objects: StorageObject[] }>(`/storage/objects?${q.toString()}`);
+  }
+
+  // ---- API keys & projects ----
+  projects(): Promise<Project[]> {
+    return this.request<Project[]>('/projects');
+  }
+
+  createProject(name: string): Promise<Project> {
+    return this.request<Project>('/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  deleteProject(id: string) {
+    return this.request<unknown>(`/projects/${enc(id)}`, { method: 'DELETE' });
+  }
+
+  projectKeys(projectId: string): Promise<ApiKey[]> {
+    return this.request<ApiKey[]>(`/projects/${enc(projectId)}/keys`);
+  }
+
+  createKey(
+    projectId: string,
+    body: { name: string; role: ApiKeyRole; rate_limit_per_min?: number },
+  ): Promise<CreatedApiKey> {
+    return this.request<CreatedApiKey>(`/projects/${enc(projectId)}/keys`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  revokeKey(id: string) {
+    return this.request<unknown>(`/keys/${enc(id)}`, { method: 'DELETE' });
+  }
+
+  usage(projectId: string): Promise<UsageResponse> {
+    const q = new URLSearchParams();
+    q.set('project_id', projectId);
+    return this.request<UsageResponse>(`/usage?${q.toString()}`);
   }
 }
 

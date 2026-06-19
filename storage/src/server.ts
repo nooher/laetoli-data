@@ -5,6 +5,7 @@ import { loadConfig } from './config.js';
 import { createPgDb } from './db.js';
 import { createFsStore } from './store.js';
 import { createApp } from './app.js';
+import { createPgApiKeyStore } from './apikeyStore.js';
 
 function main(): void {
   let config;
@@ -30,12 +31,21 @@ function main(): void {
 
   const db = createPgDb(config);
   const store = createFsStore(config.storageRoot);
+  // Only construct the key store when enforcement is enabled (default off).
+  const apiKeyStore = config.requireApiKey
+    ? createPgApiKeyStore({ databaseUrl: config.databaseUrl, pg: config.pg })
+    : undefined;
   const app = createApp({
     db,
     store,
     jwtSecret: config.jwtSecret,
     maxUploadBytes: config.maxUploadBytes,
+    requireApiKey: config.requireApiKey,
+    apiKeyStore,
   });
+  if (config.requireApiKey) {
+    console.log('[storage] REQUIRE_API_KEY=true — apikeyGuard enforcing API keys.');
+  }
 
   const server = app.listen(config.port, () => {
     console.log(

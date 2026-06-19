@@ -3,6 +3,7 @@
 import { loadConfig } from './config.js';
 import { FunctionLoader } from './loader.js';
 import { createApp } from './app.js';
+import { createPgApiKeyStore } from './apikeyStore.js';
 
 function main(): void {
   let config;
@@ -22,13 +23,22 @@ function main(): void {
   }
 
   const loader = new FunctionLoader({ root: config.functionsRoot });
+  // Only construct the key store when enforcement is enabled (default off).
+  const apiKeyStore = config.requireApiKey
+    ? createPgApiKeyStore({ databaseUrl: config.databaseUrl, pg: config.pg })
+    : undefined;
   const app = createApp({
     loader,
     jwtSecret: config.jwtSecret,
     timeoutMs: config.timeoutMs,
     bodyLimit: config.bodyLimit,
     production: config.production,
+    requireApiKey: config.requireApiKey,
+    apiKeyStore,
   });
+  if (config.requireApiKey) {
+    console.log('[functions] REQUIRE_API_KEY=true — apikeyGuard enforcing API keys.');
+  }
 
   const server = app.listen(config.port, () => {
     const fns = loader.names();

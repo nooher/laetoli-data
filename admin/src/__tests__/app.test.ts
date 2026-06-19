@@ -221,4 +221,132 @@ describe('admin HTTP routes (supertest, fake Db)', () => {
     ).send('{not json');
     expect(res.status).toBe(400);
   });
+
+  // -- API keys / projects / quotas -------------------------------------------
+
+  it('GET /projects → seeded default project', async () => {
+    const res = await auth(request(app()).get('/projects'));
+    expect(res.status).toBe(200);
+    expect(res.body.projects.some((p: { name: string }) => p.name === 'default')).toBe(true);
+  });
+
+  it('GET /projects without key → 401', async () => {
+    const res = await request(app()).get('/projects');
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /projects creates a project', async () => {
+    const res = await auth(request(app()).post('/projects')).send({ name: 'acme' });
+    expect(res.status).toBe(201);
+    expect(res.body.project.name).toBe('acme');
+    expect(res.body.project.id).toBeTruthy();
+  });
+
+  it('POST /projects without name → 400', async () => {
+    const res = await auth(request(app()).post('/projects')).send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /projects duplicate name → 409', async () => {
+    const a = app();
+    await auth(request(a).post('/projects')).send({ name: 'dup' });
+    const again = await auth(request(a).post('/projects')).send({ name: 'dup' });
+    expect(again.status).toBe(409);
+  });
+
+  it('DELETE /projects/:id removes it', async () => {
+    const a = app();
+    const created = await auth(request(a).post('/projects')).send({ name: 'tmp' });
+    const id = created.body.project.id;
+    const del = await auth(request(a).delete(`/projects/${id}`));
+    expect(del.status).toBe(200);
+    expect(del.body.deleted).toBe(true);
+  });
+
+  it('DELETE /projects/:id unknown → 404', async () => {
+    const res = await auth(request(app()).delete('/projects/nope'));
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /projects/:id/keys returns the full apikey ONCE', async () => {
+    const a = app();
+    const proj = await auth(request(a).post('/projects')).send({ name: 'keys-proj' });
+    const id = proj.body.project.id;
+
+    const res = await auth(request(a).post(`/projects/${id}/keys`)).send({
+      name: 'server key',
+      role: 'service',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.apikey).toMatch(/^ld_[A-Za-z0-9]+\.[A-Za-z0-9]+$/);
+    expect(res.body.role).toBe('service');
+    expect(res.body.key_prefix).toBeTruthy();
+    expect(res.body.rate_limit_per_min).toBe(120);
+    // The hash must never be returned.
+    expect(JSON.stringify(res.body)).not.toMatch(/key_hash/);
+
+    // Listing the key must NOT include the apikey or the hash again.
+    const list = await auth(request(a).get(`/projects/${id}/keys`));
+    expect(list.status).toBe(200);
+    expect(list.body.keys).toHaveLength(1);
+    expect(JSON.stringify(list.body)).not.toMatch(/apikey|key_hash/);
+  });
+
+  it('POST /projects/:id/keys honours rate_limit_per_min', async () => {
+    const a = app();
+    const proj = await auth(request(a).post('/projects')).send({ name: 'rl-proj' });
+    const id = proj.body.project.id;
+    const res = await auth(request(a).post(`/projects/${id}/keys`)).send({
+      role: 'anon',
+      rate_limit_per_min: 30,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.rate_limit_per_min).toBe(30);
+  });
+
+  it('POST /projects/:id/keys with bad role → 400', async () => {
+    const a = app();
+    const proj = await auth(request(a).post('/projects')).send({ name: 'badrole' });
+    const id = proj.body.project.id;
+    const res = await auth(request(a).post(`/projects/${id}/keys`)).send({ role: 'root' });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /projects/:id/keys for unknown project → 404', async () => {
+    const res = await auth(request(app()).post('/projects/nope/keys')).send({ role: 'anon' });
+    expect(res.status).toBe(404);
+  });
+
+  it('DELETE /keys/:id revokes a key', async () => {
+    const a = app();
+    const proj = await auth(request(a).post('/projects')).send({ name: 'revoke-proj' });
+    const id = proj.body.project.id;
+    const key = await auth(request(a).post(`/projects/${id}/keys`)).send({ role: 'anon' });
+    const kid = key.body.id;
+
+    const del = await auth(request(a).delete(`/keys/${kid}`));
+    expect(del.status).toBe(200);
+    expect(del.body.revoked).toBe(true);
+
+    // Revoking again → 404 (already revoked).
+    const again = await auth(request(a).delete(`/keys/${kid}`));
+    expect(again.status).toBe(404);
+  });
+
+  it('GET /usage → rows + total', async () => {
+    const res = await auth(request(app()).get('/usage'));
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.usage)).toBe(true);
+    expect(typeof res.body.total).toBe('number');
+  });
+
+  it('GET /usage?project_id= filters', async () => {
+    const a = app();
+    const proj = await auth(request(a).post('/projects')).send({ name: 'usage-proj' });
+    const id = proj.body.project.id;
+    const res = await auth(request(a).get(`/usage?project_id=${id}`));
+    expect(res.status).toBe(200);
+    expect(res.body.usage).toEqual([]);
+    expect(res.body.total).toBe(0);
+  });
 });

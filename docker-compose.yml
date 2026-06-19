@@ -101,6 +101,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       STORAGE_PORT: "9998"
       STORAGE_ROOT: /data/storage
+      # Multi-tenant API-key enforcement — OFF by default (no-op unless 'true').
+      REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}
       # The storage service connects AS laetoli_storage; bytes live on the
       # storage_data volume, metadata in the `storage` schema.
       DATABASE_URL: postgres://laetoli_storage:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
@@ -179,6 +181,11 @@ services:
       FUNCTIONS_PORT: "9995"
       FUNCTIONS_ROOT: /functions
       FUNCTION_TIMEOUT_MS: ${FUNCTION_TIMEOUT_MS:-10000}
+      # Multi-tenant API-key enforcement — OFF by default. When 'true', functions
+      # validates keys against the DB (connects AS laetoli_storage, which has
+      # SELECT on keys.*); flip only after minting keys.
+      REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}
+      DATABASE_URL: postgres://laetoli_storage:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:
       - ./functions/src:/functions:ro
     expose:

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Self-hosting · Laetoli Data docs</title>
+  <meta name="description" content="Deploy Laetoli Data on a Tanzanian VPS or a Raspberry Pi; backups, point-in-time recovery, and observability." />
+  <meta name="theme-color" content="#0F2A1D" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F2A1D'/%3E%3Cpath d='M9 22 L16 8 L23 22' fill='none' stroke='%23E0A93B' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='22' r='2.1' fill='%23E0A93B'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Ruka hadi yaliyomo</a>
+
+  <header class="topbar">
+    <button class="menu-toggle" type="button" aria-label="Fungua menyu ya urambazaji" aria-controls="sidebar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="brand" href="index.html" aria-label="Laetoli Data docs — nyumbani">
+      <svg class="brand-mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" fill="#0F2A1D"/><path d="M9 22 L16 8 L23 22" fill="none" stroke="#E0A93B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="22" r="2.1" fill="#E0A93B"/></svg>
+      <span class="brand-name">Laetoli&nbsp;Data</span>
+    </a>
+    <span class="topbar-spacer"></span>
+    <a class="topbar-link" href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+  </header>
+
+  <div class="scrim" aria-hidden="true"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav aria-label="Urambazaji wa nyaraka">
+        <div class="side-group">
+          <h4>Anza hapa · Get started</h4>
+          <a class="side-link" href="index.html">Utangulizi · Intro</a>
+          <a class="side-link" href="quick-start.html">Quick start</a>
+          <a class="side-link" href="architecture.html">Architecture</a>
+        </div>
+        <div class="side-group">
+          <h4>SDK · @laetoli/data</h4>
+          <a class="side-link" href="auth.html">Auth</a>
+          <a class="side-link" href="database.html">Database / PostgREST</a>
+          <a class="side-link" href="storage.html">Storage</a>
+          <a class="side-link" href="realtime.html">Realtime</a>
+          <a class="side-link" href="functions.html">Edge Functions</a>
+        </div>
+        <div class="side-group">
+          <h4>Operate · Endesha</h4>
+          <a class="side-link" href="admin.html">Admin & Studio</a>
+          <a class="side-link" href="cli.html">CLI</a>
+          <a class="side-link" href="self-hosting.html">Self-hosting</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="content" id="main">
+      <article class="content-inner">
+        <p class="eyebrow">Operate · Endesha</p>
+        <h1>Self-hosting</h1>
+        <p class="lede">The same stack runs on a national-scale VPS and on a Raspberry Pi in a classroom. Same compose file, same <code>.env</code>, same data model — a Pi pilot ports straight to a server with a <code>pg_dump</code>/restore.</p>
+
+        <h2>On a Tanzanian VPS</h2>
+        <p>Take a fresh 64-bit Linux VPS (Ubuntu 22.04/24.04, 1 GB RAM minimum) to a TLS-secured backend:</p>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">vps.sh</span>
+            <button class="copy-btn" type="button" data-copy-target="code-26" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-26"># 1. Install Docker + the Compose plugin
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker "$USER"     # log out/in to apply
+sudo ufw allow 80,443/tcp &amp;&amp; sudo ufw enable
+
+# 2. Get the code + configure secrets
+git clone &lt;your-laetoli-data-repo&gt; laetoli-data &amp;&amp; cd laetoli-data
+cp .env.example .env
+echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)"
+echo "JWT_SECRET=$(openssl rand -base64 48)"   # paste both into .env
+
+# 3. Bring it up
+docker compose up -d
+docker compose ps</code></pre>
+        </div>
+        <p>For public HTTPS, set a DNS <strong>A record</strong> to the VPS IP, then in <code>.env</code> set <code>CADDY_DOMAIN=data.yourorg.tz</code> with <code>CADDY_HTTP=80</code> and <code>CADDY_HTTPS=443</code>. Caddy obtains and renews a Let's Encrypt certificate automatically. Key variables:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>POSTGRES_PASSWORD</code></td><td>DB password; also the secret for the PostgREST + auth login roles.</td></tr>
+              <tr><td><code>JWT_SECRET</code></td><td>Shared HS256 secret — auth signs, PostgREST verifies. Must be identical, ≥ 32 chars.</td></tr>
+              <tr><td><code>JWT_EXPIRY</code></td><td>Token lifetime in seconds (default 3600).</td></tr>
+              <tr><td><code>CADDY_DOMAIN</code></td><td>Your domain → enables automatic HTTPS. Leave blank for local/LAN HTTP.</td></tr>
+              <tr><td><code>LAETOLI_DATA_URL</code></td><td>The public base URL apps point at.</td></tr>
+              <tr><td><code>ADMIN_API_KEY</code></td><td>Service-role key for the admin API + Studio.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>On a Raspberry Pi — "shule ndani ya kisanduku"</h2>
+        <p>A Pi 4 (4 GB+) or Pi 5 on a 64-bit OS runs the whole stack on a classroom LAN with no internet. All images are multi-arch (<code>linux/arm64</code>).</p>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">pi.sh</span>
+            <button class="copy-btn" type="button" data-copy-target="code-27" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-27">cp .env.example .env
+# Leave CADDY_DOMAIN blank (no public TLS on a LAN box).
+# Set POSTGRES_PASSWORD + JWT_SECRET. Optionally CADDY_HTTP=80.
+
+# One-time, with internet, cache the images:
+docker compose pull &amp;&amp; docker compose build
+
+# Then it starts fully offline:
+docker compose up -d
+hostname -I            # find the Pi's LAN IP, e.g. 192.168.1.50</code></pre>
+        </div>
+        <p>Apps on the same network point at <code>http://192.168.1.50:8088</code> (or <code>raspberrypi.local:8088</code> via mDNS). Services use <code>restart: unless-stopped</code>, so the backend comes back automatically after a power cycle.</p>
+                <div class="note warn"><span class="note-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span><div><p><strong>microSD cards fail.</strong> Prefer booting from a USB SSD, back up regularly (the VPS <code>pg_dump</code> script works verbatim), copy dumps off the Pi, and use the official PSU — brownouts corrupt data. Treat the card as disposable and the backups as the source of truth.</p></div></div>
+
+        <h2>Backups &amp; point-in-time recovery</h2>
+        <p>A nightly <code>pg_dump</code> (the <code>backup</code> service, or a cron one-liner) gives a daily restore point. <strong>PITR</strong> adds continuous WAL archiving so you can restore to any second between base backups — the difference between "lose up to a day" and "lose up to ~5 minutes". PITR is opt-in: the default <code>docker compose up</code> leaves WAL archiving off until you enable it.</p>
+                <div class="code-card">
+          <div class="code-head">
+            <span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span>
+            <span class="code-file">backup.sh</span>
+            <button class="copy-btn" type="button" data-copy-target="code-28" aria-label="Nakili msimbo">Nakili</button>
+          </div>
+<pre class="code-block"><code id="code-28"># Daily logical backup, keep 14 days (cron @ 02:30):
+docker compose exec -T db \
+  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists \
+  | gzip &gt; "backups/${POSTGRES_DB}_$(date +%F_%H%M).sql.gz"
+
+# Restore:
+gunzip -c backups/&lt;file&gt;.sql.gz \
+  | docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"</code></pre>
+        </div>
+        <p>PITR needs <code>wal_level=replica</code> + <code>archive_mode=on</code> (provided in <code>db/postgres.conf</code>), a <code>wal_archive</code> volume, and a base backup taken after archiving is on. Restore = base backup + WAL replay up to a <code>recovery_target_time</code>. The full runbook is in <code>docs/PITR.md</code>.</p>
+
+        <h2>Observability</h2>
+        <p>Every Node service exposes Prometheus-format metrics on its own internal port (not proxied through Caddy). No external dependency — each ships a tiny metrics registry and renders the text format itself.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Service</th><th>Endpoint</th><th>Service-specific metric</th></tr></thead>
+            <tbody>
+              <tr><td>auth (9999)</td><td><code>/metrics</code></td><td><code>auth_tokens_issued_total</code></td></tr>
+              <tr><td>storage (9998)</td><td><code>/metrics</code></td><td><code>storage_objects_served_total</code></td></tr>
+              <tr><td>realtime (9997)</td><td><code>/metrics</code></td><td><code>realtime_active_connections</code>, <code>realtime_active_subscriptions</code></td></tr>
+              <tr><td>backup (9994)</td><td><code>/status</code>, <code>/health</code></td><td>JSON status snapshot (last run / success / size / next run)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>auth / storage / realtime also expose <code>process_uptime_seconds</code>, <code>http_requests_total{route,status}</code>, and an <code>http_request_duration_seconds</code> histogram. Point a Prometheus on the same Docker network at the service names. Details and a sample <code>prometheus.yml</code> are in <code>docs/OBSERVABILITY.md</code>.</p>
+                <div class="note warn"><span class="note-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span><div><p><strong>Keep <code>/metrics</code> internal.</strong> It is not authenticated and not proxied through Caddy. If you must reach it from outside, put it behind the edge with auth or an allow-list — don't expose it raw on the internet.</p></div></div>
+
+        <nav class="pager" aria-label="Kurasa">
+          <a class="prev" href="cli.html"><span class="dir">← Iliyotangulia</span><span class="ttl">CLI</span></a>
+          
+        </nav>
+        <footer class="docs-footer">
+          <span>Laetoli Data · sehemu ya stack sovereign ya Laetoli</span>
+          <span class="sep">·</span>
+          <a href="https://github.com/nooher/laetoli-data" rel="noopener">GitHub</a>
+          <span class="sep">·</span>
+          <a href="https://laetoli.tz" rel="noopener">laetoli.tz</a>
+          <span class="sep">·</span>
+          <span>Apache-2.0 · © 2026 Laetoli Ltd</span>
+        </footer>
+      </article>
+    </main>
+  </div>
+
+  <script src="docs.js" defer></script>
+</body>
+</html>

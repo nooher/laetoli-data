@@ -18,6 +18,22 @@ export interface FunctionsConfig {
   bodyLimit: string;
   /** When true, never leak error messages/stacks to the client. */
   production: boolean;
+  /**
+   * Opt-in API-key enforcement (multi-tenant). Default false → the apikeyGuard
+   * is a no-op and all existing flows are unchanged. Set REQUIRE_API_KEY=true
+   * to require a valid `apikey` header/query on every invocation.
+   */
+  requireApiKey: boolean;
+  // Postgres connection (only used when requireApiKey is true): prefer
+  // DATABASE_URL, else POSTGRES_* parts. Mirrors auth/storage conventions.
+  databaseUrl?: string;
+  pg: {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    database: string;
+  };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): FunctionsConfig {
@@ -43,5 +59,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FunctionsConfi
     timeoutMs,
     bodyLimit: env.FUNCTIONS_BODY_LIMIT ?? '1mb',
     production: (env.NODE_ENV ?? '') === 'production',
+    requireApiKey: (env.REQUIRE_API_KEY ?? 'false').toLowerCase() === 'true',
+    databaseUrl: env.DATABASE_URL,
+    pg: {
+      host: env.POSTGRES_HOST ?? 'db',
+      port: Number.parseInt(env.POSTGRES_PORT ?? '5432', 10),
+      user: env.POSTGRES_USER ?? 'laetoli_functions',
+      password: env.POSTGRES_PASSWORD ?? '',
+      database: env.POSTGRES_DB ?? 'laetoli',
+    },
   };
 }

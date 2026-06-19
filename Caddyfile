@@ -12,15 +12,22 @@
 {$CADDY_DOMAIN} {
 	encode zstd gzip
 
-	# CORS for browser clients (the @laetoli/data SDK runs in the browser).
-	@cors_preflight method OPTIONS
+	# Security + CORS response headers (applied to every response).
 	header {
+		# CORS for browser clients (the @laetoli/data SDK runs in the browser).
 		Access-Control-Allow-Origin "*"
 		Access-Control-Allow-Methods "GET, POST, PATCH, PUT, DELETE, OPTIONS"
 		Access-Control-Allow-Headers "Authorization, Content-Type, Prefer, Accept, Accept-Profile, Content-Profile, Range, apikey"
 		Access-Control-Expose-Headers "Content-Range, Content-Location, Location"
 		Access-Control-Max-Age "86400"
+		# Hardening headers.
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Remove server fingerprint.
+		-Server
 	}
+	@cors_preflight method OPTIONS
 	respond @cors_preflight 204
 
 	# PostgREST — strip /rest, forward the remainder.
