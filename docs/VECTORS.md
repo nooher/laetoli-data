@@ -11,6 +11,11 @@ pgvector/AI features, and the **memory/knowledge store for Akili**.
 > or in an edge function) and write it here. This keeps the stack dependency-free
 > and Pi-ready. See [Bringing your own embeddings](#bringing-your-own-embeddings).
 
+> **Want keyword + semantic together?** See [**Search**](./SEARCH.md) — it adds
+> Postgres full-text search to this same `documents` table and fuses it with the
+> vector search via Reciprocal Rank Fusion (`hybrid_search`), the standard RAG
+> retrieval pattern.
+
 ---
 
 ## 1. Prerequisite: the pgvector database image

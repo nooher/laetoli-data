@@ -15,7 +15,14 @@ export type {
 export { FunctionsClient } from './functions';
 export type { InvokeOptions } from './functions';
 export { VectorClient } from './vectors';
-export type { MatchedDocument, MatchOptions } from './vectors';
+export type {
+  MatchedDocument,
+  MatchOptions,
+  SearchedDocument,
+  SearchOptions,
+  HybridDocument,
+  HybridSearchOptions,
+} from './vectors';
 export type {
   ClientOptions,
   TokenStorage,

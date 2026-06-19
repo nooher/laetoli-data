@@ -87,6 +87,67 @@ describe('VectorClient.matchDocuments', () => {
   });
 });
 
+describe('VectorClient.searchDocuments', () => {
+  it('calls search_documents with query + defaults (count 10, empty filter)', async () => {
+    const { fn, calls } = makeFetch([
+      { json: [{ id: 'd1', content: 'hi', metadata: {}, rank: 0.42 }] },
+    ]);
+    const { data, error } = await vclient(fn).searchDocuments('backups nightly');
+    expect(error).toBeNull();
+    expect(data?.[0].rank).toBe(0.42);
+    expect(calls[0].url).toBe(`${REST}/rpc/search_documents`);
+    const body = calls[0].body as Record<string, unknown>;
+    expect(body.query).toBe('backups nightly');
+    expect(body.match_count).toBe(10);
+    expect(body.filter).toEqual({});
+  });
+
+  it('passes count + filter through', async () => {
+    const { fn, calls } = makeFetch([{ json: [] }]);
+    await vclient(fn).searchDocuments('export', { count: 3, filter: { source: 'akili' } });
+    const body = calls[0].body as Record<string, unknown>;
+    expect(body.match_count).toBe(3);
+    expect(body.filter).toEqual({ source: 'akili' });
+  });
+});
+
+describe('VectorClient.hybridSearch', () => {
+  it('calls hybrid_search with query + embedding + RRF defaults', async () => {
+    const { fn, calls } = makeFetch([
+      { json: [{ id: 'd1', content: 'hi', metadata: {}, score: 0.039 }] },
+    ]);
+    const { data, error } = await vclient(fn).hybridSearch('how to export', VEC384);
+    expect(error).toBeNull();
+    expect(data?.[0].score).toBe(0.039);
+    expect(calls[0].url).toBe(`${REST}/rpc/hybrid_search`);
+    const body = calls[0].body as Record<string, unknown>;
+    expect(body.query).toBe('how to export');
+    expect((body.query_embedding as number[]).length).toBe(384);
+    expect(body.match_count).toBe(10);
+    expect(body.full_text_weight).toBe(1.0);
+    expect(body.semantic_weight).toBe(1.0);
+    expect(body.rrf_k).toBe(50);
+    expect(body.filter).toEqual({});
+  });
+
+  it('passes weights, rrfK, count + filter through', async () => {
+    const { fn, calls } = makeFetch([{ json: [] }]);
+    await vclient(fn).hybridSearch('q', VEC384, {
+      count: 5,
+      fullTextWeight: 2,
+      semanticWeight: 0.5,
+      rrfK: 60,
+      filter: { source: 'akili' },
+    });
+    const body = calls[0].body as Record<string, unknown>;
+    expect(body.match_count).toBe(5);
+    expect(body.full_text_weight).toBe(2);
+    expect(body.semantic_weight).toBe(0.5);
+    expect(body.rrf_k).toBe(60);
+    expect(body.filter).toEqual({ source: 'akili' });
+  });
+});
+
 describe('client.rpc / client.matchDocuments wiring', () => {
   it('client.rpc carries the signed-in bearer + apikey to /rest/rpc/:fn', async () => {
     const { fn, calls } = makeFetch([{ json: { result: 42 } }]);
@@ -105,5 +166,26 @@ describe('client.rpc / client.matchDocuments wiring', () => {
     await c.matchDocuments(VEC384, { count: 2 });
     expect(calls[0].url).toBe(`${REST}/rpc/match_documents`);
     expect((calls[0].body as Record<string, unknown>).match_count).toBe(2);
+  });
+
+  it('client.searchDocuments is a shortcut for vectors.searchDocuments', async () => {
+    const { fn, calls } = makeFetch([{ json: [] }]);
+    const c = createClient(URL, baseOpts(fn));
+    await c.searchDocuments('hello', { count: 4 });
+    expect(calls[0].url).toBe(`${REST}/rpc/search_documents`);
+    const body = calls[0].body as Record<string, unknown>;
+    expect(body.query).toBe('hello');
+    expect(body.match_count).toBe(4);
+  });
+
+  it('client.hybridSearch is a shortcut for vectors.hybridSearch', async () => {
+    const { fn, calls } = makeFetch([{ json: [] }]);
+    const c = createClient(URL, baseOpts(fn));
+    await c.hybridSearch('hello', VEC384, { count: 7 });
+    expect(calls[0].url).toBe(`${REST}/rpc/hybrid_search`);
+    const body = calls[0].body as Record<string, unknown>;
+    expect(body.query).toBe('hello');
+    expect((body.query_embedding as number[]).length).toBe(384);
+    expect(body.match_count).toBe(7);
   });
 });

@@ -4,7 +4,15 @@ import { DEFAULT_STORAGE_KEY, resolveStorage } from './storage';
 import { StorageClient } from './objectstore';
 import { RealtimeClient, type RealtimeChannel } from './realtime';
 import { FunctionsClient } from './functions';
-import { VectorClient, type MatchOptions, type MatchedDocument } from './vectors';
+import {
+  VectorClient,
+  type MatchOptions,
+  type MatchedDocument,
+  type SearchOptions,
+  type SearchedDocument,
+  type HybridSearchOptions,
+  type HybridDocument,
+} from './vectors';
 import type { ClientOptions, DataResult } from './types';
 
 /**
@@ -20,7 +28,7 @@ export class LaetoliDataClient {
   readonly realtime: RealtimeClient;
   /** Edge functions — `.functions.invoke(name, { body })`. */
   readonly functions: FunctionsClient;
-  /** Vectors / RPC — `.vectors.matchDocuments(embedding)` and `.rpc(fn, args)`. */
+  /** Vectors / search / RPC — `.matchDocuments` / `.searchDocuments` / `.hybridSearch` / `.rpc(fn, args)`. */
   readonly vectors: VectorClient;
   private readonly restUrl: string;
   private readonly fetchImpl: typeof fetch;
@@ -83,6 +91,23 @@ export class LaetoliDataClient {
     opts?: MatchOptions,
   ): Promise<DataResult<MatchedDocument<M>[]>> {
     return this.vectors.matchDocuments<M>(embedding, opts);
+  }
+
+  /** Keyword full-text search over `public.documents` (shortcut for `.vectors.searchDocuments`). */
+  searchDocuments<M = Record<string, unknown>>(
+    query: string,
+    opts?: SearchOptions,
+  ): Promise<DataResult<SearchedDocument<M>[]>> {
+    return this.vectors.searchDocuments<M>(query, opts);
+  }
+
+  /** Hybrid (full-text + vector, RRF-fused) search — shortcut for `.vectors.hybridSearch`. */
+  hybridSearch<M = Record<string, unknown>>(
+    query: string,
+    embedding: readonly number[],
+    opts?: HybridSearchOptions,
+  ): Promise<DataResult<HybridDocument<M>[]>> {
+    return this.vectors.hybridSearch<M>(query, embedding, opts);
   }
 
   /** Begin a PostgREST query against a table or view. */

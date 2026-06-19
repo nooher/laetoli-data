@@ -1,0 +1,12 @@
+-- =============================================================================
+-- 09_search.sql — hybrid search (full-text + vector) on a FRESH boot.
+-- -----------------------------------------------------------------------------
+-- Single source of truth: includes the canonical migration. Existing databases
+-- get the same SQL via `laetoli-data migrate` (0006_search.sql).
+--
+-- REQUIRES 08_vectors.sql / 0005_vectors.sql to have run first (it extends
+-- public.documents and fuses with its match_documents vector search). The init
+-- scripts run in filename order, so 08_vectors precedes 09_search. Full-text
+-- search itself needs no extension beyond stock Postgres.
+-- =============================================================================
+\i /migrations/0006_search.sql
