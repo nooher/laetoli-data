@@ -246,6 +246,11 @@ services:
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
       BACKUP_PORT: "9994"
       BACKUP_DIR: /backups
+      # Off-device durability (all optional + fail-soft; see .env.example):
+      #   mirror to a SECOND path, push off-site, and archive the storage volume.
+      BACKUP_MIRROR_DIR: ${BACKUP_MIRROR_DIR:-}
+      BACKUP_OFFSITE_CMD: ${BACKUP_OFFSITE_CMD:-}
+      BACKUP_STORAGE_DIR: ${BACKUP_STORAGE_DIR:-}
       # Dump as the superuser for a complete dump (all schemas/roles' tables).
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       PGHOST: db
@@ -255,6 +260,9 @@ services:
       PGDATABASE: ${POSTGRES_DB}
     volumes:
       - backups:/backups
+      # The object-storage bytes, read-only — set BACKUP_STORAGE_DIR=/storage to
+      # also archive them (tar.gz) alongside each pg_dump. Harmless when unset.
+      - storage_data:/storage:ro
     depends_on:
       db:
         condition: service_healthy
@@ -267,6 +275,15 @@ services:
     env_file: .env
     environment:
       CADDY_DOMAIN: ${CADDY_DOMAIN:-}
+      # CORS allow-list (see SECURITY.md). Unset -> permissive "*" (dev). For a
+      # public deployment set CORS_ALLOWED_ORIGINS="" and provide an anchored
+      # alternation regexp of your app origins in CORS_ALLOWED_ORIGINS_REGEXP.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_ALLOWED_ORIGINS_REGEXP: ${CORS_ALLOWED_ORIGINS_REGEXP:-}
+      # Edge rate-limit knobs (only effective on a Caddy built WITH the
+      # rate_limit plugin — see SECURITY.md / the Caddyfile note).
+      RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-10}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-120}
     ports:
       - "${CADDY_HTTP:-8088}:80"
       - "${CADDY_HTTPS:-8443}:443"

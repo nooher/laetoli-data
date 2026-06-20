@@ -6,7 +6,26 @@ export interface BackupConfig {
   port: number;
   /** Directory dumps are written to (the mounted /backups volume). */
   backupDir: string;
-  /** How many dumps to retain (oldest beyond this are pruned). */
+  /**
+   * Optional SECOND target every dump (and storage archive) is copied to —
+   * e.g. a mounted USB drive. Empty/undefined disables mirroring. Fail-soft:
+   * a mirror error never aborts the primary dump.
+   */
+  mirrorDir?: string;
+  /**
+   * Optional off-site push command template, run AFTER a successful dump. The
+   * tokens `{file}` (absolute dump path) and `{name}` (basename) are
+   * substituted; e.g. `rclone copy {file} remote:laetoli` or
+   * `scp {file} pi@host:/backups`. Fail-soft. Empty/undefined disables it.
+   */
+  offsiteCmd?: string;
+  /**
+   * Optional path to the object-storage root (the storage_data volume). When
+   * set, each run also writes a tar.gz of this directory next to the pg_dump,
+   * pruned by the same retention. Empty/undefined skips storage archiving.
+   */
+  storageDir?: string;
+  /** How many dumps (and storage archives) to retain (oldest beyond this are pruned). */
   keep: number;
   /** 5-field cron string (preferred). Empty when interval mode is used. */
   cron: string;
@@ -43,9 +62,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackupConfig {
         ? 24 // neither set -> daily by interval as a safe default
         : null;
 
+  // Off-device targets — all optional so the default compose is unchanged.
+  const mirrorDir = (env.BACKUP_MIRROR_DIR ?? '').trim();
+  const offsiteCmd = (env.BACKUP_OFFSITE_CMD ?? '').trim();
+  const storageDir = (env.BACKUP_STORAGE_DIR ?? '').trim();
+
   return {
     port: parseIntOr(env.BACKUP_PORT, 9994),
     backupDir: env.BACKUP_DIR ?? '/backups',
+    mirrorDir: mirrorDir.length > 0 ? mirrorDir : undefined,
+    offsiteCmd: offsiteCmd.length > 0 ? offsiteCmd : undefined,
+    storageDir: storageDir.length > 0 ? storageDir : undefined,
     keep: parseIntOr(env.BACKUP_KEEP, 14),
     cron: cron.length > 0 ? cron : '0 3 * * *', // documented default, used if cron mode
     intervalHours,

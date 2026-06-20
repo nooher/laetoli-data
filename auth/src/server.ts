@@ -19,6 +19,11 @@ function main(): void {
     db,
     jwtSecret: config.jwtSecret,
     jwtExpiry: config.jwtExpiry,
+    refreshExpiry: config.refreshExpiry,
+    resetExpiry: config.resetExpiry,
+    emailVerifyExpiry: config.emailVerifyExpiry,
+    resetDelivery: config.resetDelivery,
+    emailDelivery: config.emailDelivery,
   });
 
   const server = app.listen(config.port, () => {

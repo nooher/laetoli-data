@@ -19,11 +19,50 @@ export interface BackupStatus {
   mode: 'cron' | 'interval';
   /** The cron expression or interval description in force. */
   schedule: string;
+  /** Off-device mirror target health (null fields => disabled / not yet run). */
+  mirror: TargetStatus;
+  /** Off-site push command health. */
+  offsite: TargetStatus;
+  /** Storage-directory archive health. */
+  storageArchive: TargetStatus;
+}
+
+/**
+ * Health of one optional secondary target (mirror / offsite / storage archive).
+ * `enabled=false` means the operator hasn't configured it — everything else is
+ * null until a run actually exercises it.
+ */
+export interface TargetStatus {
+  /** Whether the operator configured this target (env set). */
+  enabled: boolean;
+  /** ISO timestamp of the last SUCCESSFUL use, or null. */
+  lastSuccess: string | null;
+  /** Error message from the last failure, or null. */
+  lastError: string | null;
+  /** Count of failures since process start (fail-soft, monotonic). */
+  errorCount: number;
+  /** Size in bytes of the last artifact written/pushed, or null. */
+  lastBytes: number | null;
+}
+
+export function emptyTarget(enabled: boolean): TargetStatus {
+  return {
+    enabled,
+    lastSuccess: null,
+    lastError: null,
+    errorCount: 0,
+    lastBytes: null,
+  };
 }
 
 export function emptyStatus(
   mode: 'cron' | 'interval',
-  schedule: string
+  schedule: string,
+  targets: {
+    mirror?: boolean;
+    offsite?: boolean;
+    storageArchive?: boolean;
+  } = {}
 ): BackupStatus {
   return {
     service: 'laetoli-backup',
@@ -35,5 +74,8 @@ export function emptyStatus(
     nextRun: null,
     mode,
     schedule,
+    mirror: emptyTarget(targets.mirror ?? false),
+    offsite: emptyTarget(targets.offsite ?? false),
+    storageArchive: emptyTarget(targets.storageArchive ?? false),
   };
 }

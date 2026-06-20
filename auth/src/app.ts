@@ -8,15 +8,27 @@ import {
   handleToken,
   handleAnonymous,
   handleGetUser,
+  handleRefresh,
+  handleLogout,
+  handlePasswordForgot,
+  handlePasswordReset,
+  handleEmailVerifyRequest,
+  handleEmailVerifyConfirm,
   type HandlerDeps,
 } from './handlers.js';
 import { createRateLimiter, type RateLimiter } from './ratelimit.js';
 import { Registry } from './metrics.js';
+import type { DeliveryMode } from './config.js';
 
 export interface AppDeps {
   db: Db;
   jwtSecret: string;
   jwtExpiry: number;
+  refreshExpiry?: number;
+  resetExpiry?: number;
+  emailVerifyExpiry?: number;
+  resetDelivery?: DeliveryMode;
+  emailDelivery?: DeliveryMode;
   /** Optional override; defaults to a sensible auth limiter. */
   limiter?: RateLimiter;
   /** Optional shared metrics registry (defaults to a fresh one). */
@@ -29,7 +41,20 @@ function clientKey(req: Request): string {
 
 /** Collapse unknown paths to a stable, low-cardinality metrics label. */
 function routeLabel(path: string): string {
-  const known = ['/health', '/metrics', '/signup', '/token', '/anonymous', '/user'];
+  const known = [
+    '/health',
+    '/metrics',
+    '/signup',
+    '/token',
+    '/anonymous',
+    '/user',
+    '/refresh',
+    '/logout',
+    '/password/forgot',
+    '/password/reset',
+    '/email/verify/request',
+    '/email/verify/confirm',
+  ];
   return known.includes(path) ? path : 'other';
 }
 
@@ -64,7 +89,10 @@ export function createApp(deps: AppDeps): Express {
       httpDuration.observe(seconds, { route });
       if (
         res.statusCode < 300 &&
-        (req.path === '/signup' || req.path === '/token' || req.path === '/anonymous')
+        (req.path === '/signup' ||
+          req.path === '/token' ||
+          req.path === '/anonymous' ||
+          req.path === '/refresh')
       ) {
         tokensIssued.inc();
       }
@@ -83,7 +111,14 @@ export function createApp(deps: AppDeps): Express {
     db: deps.db,
     jwtSecret: deps.jwtSecret,
     jwtExpiry: deps.jwtExpiry,
+    refreshExpiry: deps.refreshExpiry,
+    resetExpiry: deps.resetExpiry,
+    emailVerifyExpiry: deps.emailVerifyExpiry,
+    resetDelivery: deps.resetDelivery,
+    emailDelivery: deps.emailDelivery,
   };
+
+  const ua = (req: Request): string | null => req.header('user-agent') ?? null;
 
   // 30 auth attempts / minute / IP — protects signup/token/anonymous.
   const limiter =
@@ -109,7 +144,7 @@ export function createApp(deps: AppDeps): Express {
   app.post('/signup', async (req, res, next) => {
     if (!guard(req, res)) return;
     try {
-      send(res, await handleSignup(handlerDeps, req.body ?? {}));
+      send(res, await handleSignup(handlerDeps, req.body ?? {}, ua(req)));
     } catch (e) {
       next(e);
     }
@@ -118,7 +153,7 @@ export function createApp(deps: AppDeps): Express {
   app.post('/token', async (req, res, next) => {
     if (!guard(req, res)) return;
     try {
-      send(res, await handleToken(handlerDeps, req.body ?? {}));
+      send(res, await handleToken(handlerDeps, req.body ?? {}, ua(req)));
     } catch (e) {
       next(e);
     }
@@ -127,7 +162,7 @@ export function createApp(deps: AppDeps): Express {
   app.post('/anonymous', async (req, res, next) => {
     if (!guard(req, res)) return;
     try {
-      send(res, await handleAnonymous(handlerDeps));
+      send(res, await handleAnonymous(handlerDeps, ua(req)));
     } catch (e) {
       next(e);
     }
@@ -136,6 +171,69 @@ export function createApp(deps: AppDeps): Express {
   app.get('/user', async (req, res, next) => {
     try {
       send(res, await handleGetUser(handlerDeps, req.header('authorization')));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Swap a refresh token for a fresh access JWT + rotated refresh token.
+  app.post('/refresh', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleRefresh(handlerDeps, req.body ?? {}, ua(req)));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Revoke the presented refresh token + its rotation family.
+  app.post('/logout', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleLogout(handlerDeps, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Issue a single-use password-reset token (delivery seam).
+  app.post('/password/forgot', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handlePasswordForgot(handlerDeps, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Consume a reset token → set new password + revoke all refresh tokens.
+  app.post('/password/reset', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handlePasswordReset(handlerDeps, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Issue a single-use email-verification token for the authenticated user.
+  app.post('/email/verify/request', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(
+        res,
+        await handleEmailVerifyRequest(handlerDeps, req.header('authorization'))
+      );
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Consume an email-verification token → mark the email verified.
+  app.post('/email/verify/confirm', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleEmailVerifyConfirm(handlerDeps, req.body ?? {}));
     } catch (e) {
       next(e);
     }

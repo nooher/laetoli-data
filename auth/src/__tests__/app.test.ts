@@ -65,6 +65,55 @@ describe('HTTP routes (supertest, fake Db)', () => {
     expect(blocked.status).toBe(429);
   });
 
+  it('full flow: signup → /refresh → rotated token works, old fails', async () => {
+    const a = app();
+    const signup = await request(a)
+      .post('/signup')
+      .send({ username: 'rafiki', password: 'siri1234' });
+    const rt1 = signup.body.refresh_token;
+    expect(rt1).toBeTruthy();
+
+    const refreshed = await request(a).post('/refresh').send({ refresh_token: rt1 });
+    expect(refreshed.status).toBe(200);
+    const rt2 = refreshed.body.refresh_token;
+    expect(rt2).not.toBe(rt1);
+
+    // Reuse of rt1 now fails (revoked).
+    const reuse = await request(a).post('/refresh').send({ refresh_token: rt1 });
+    expect(reuse.status).toBe(401);
+  });
+
+  it('POST /logout revokes the refresh token', async () => {
+    const a = app();
+    const signup = await request(a)
+      .post('/signup')
+      .send({ username: 'tatu', password: 'siri1234' });
+    const rt = signup.body.refresh_token;
+
+    const out = await request(a).post('/logout').send({ refresh_token: rt });
+    expect(out.status).toBe(200);
+
+    const after = await request(a).post('/refresh').send({ refresh_token: rt });
+    expect(after.status).toBe(401);
+  });
+
+  it('POST /password/forgot → /password/reset over HTTP', async () => {
+    const a = app();
+    await request(a).post('/signup').send({ username: 'wema', password: 'siri1234' });
+    const forgot = await request(a).post('/password/forgot').send({ username: 'wema' });
+    expect(forgot.status).toBe(200);
+    const token = forgot.body.reset_token;
+    expect(token).toBeTruthy();
+    const reset = await request(a)
+      .post('/password/reset')
+      .send({ token, password: 'mpyaSiri9' });
+    expect(reset.status).toBe(200);
+    const login = await request(a)
+      .post('/token')
+      .send({ username: 'wema', password: 'mpyaSiri9' });
+    expect(login.status).toBe(200);
+  });
+
   it('unknown route → 404 JSON', async () => {
     const res = await request(app()).get('/nope');
     expect(res.status).toBe(404);

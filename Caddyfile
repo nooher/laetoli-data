@@ -7,28 +7,85 @@
 #   * LOCAL / Pi / localhost (CADDY_DOMAIN empty) -> ":80", plain HTTP (no TLS),
 #     reachable on the host via ${CADDY_HTTP:-8088}.
 #   * PROD (CADDY_DOMAIN=data.example.tz) -> real domain key -> AUTOMATIC HTTPS.
+#
+# -----------------------------------------------------------------------------
+# CORS (configurable, see SECURITY.md "CORS"):
+#   * CORS_ALLOWED_ORIGINS UNSET (default) -> permissive `*`. Convenient for
+#     local dev / the @laetoli/data SDK from any origin. NOT for production: a
+#     public deployment should pin this to your app origins.
+#   * CORS_ALLOWED_ORIGINS_REGEXP SET -> the edge REFLECTS only an Origin that
+#     matches the regexp, and emits `Vary: Origin` so caches don't cross-
+#     pollinate. Unmatched origins get NO Allow-Origin header (the browser then
+#     blocks the cross-origin read). See SECURITY.md for how to turn a plain
+#     comma list into this anchored alternation.
+#
+# Edge rate limiting (see SECURITY.md "Rate limiting"):
+#   The base `caddy:2-alpine` image does NOT bundle the `rate_limit` handler, so
+#   the `rate_limit` block below is commented out and is OFF unless you build a
+#   Caddy with the plugin (xcaddy note in SECURITY.md / docker-compose comment).
+#   The auth service keeps its own app-level per-IP limiter as the guaranteed
+#   floor regardless. When the plugin IS present the defaults come from
+#   RATE_LIMIT_RPS / RATE_LIMIT_BURST.
 # =============================================================================
+
+{
+	# Let the rate_limit handler (when the plugin is built in) run early.
+	order rate_limit before basicauth
+}
 
 {$CADDY_DOMAIN} {
 	encode zstd gzip
 
-	# Security + CORS response headers (applied to every response).
+	# --- Hardening + shared CORS response headers (always applied) ------------
 	header {
-		# CORS for browser clients (the @laetoli/data SDK runs in the browser).
-		Access-Control-Allow-Origin "*"
-		Access-Control-Allow-Methods "GET, POST, PATCH, PUT, DELETE, OPTIONS"
-		Access-Control-Allow-Headers "Authorization, Content-Type, Prefer, Accept, Accept-Profile, Content-Profile, Range, apikey"
-		Access-Control-Expose-Headers "Content-Range, Content-Location, Location"
-		Access-Control-Max-Age "86400"
 		# Hardening headers.
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		# Remove server fingerprint.
 		-Server
+		# CORS (the per-origin Allow-Origin is decided below).
+		Access-Control-Allow-Methods "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+		Access-Control-Allow-Headers "Authorization, Content-Type, Prefer, Accept, Accept-Profile, Content-Profile, Range, apikey"
+		Access-Control-Expose-Headers "Content-Range, Content-Location, Location"
+		Access-Control-Max-Age "86400"
 	}
+
+	# --- CORS Allow-Origin -----------------------------------------------------
+	# DEFAULT (CORS_ALLOWED_ORIGINS unset): the placeholder resolves to "*" and
+	# every origin is permitted. PRODUCTION: leave CORS_ALLOWED_ORIGINS="" and
+	# set CORS_ALLOWED_ORIGINS_REGEXP to an anchored alternation of your app
+	# origins (see SECURITY.md); matching origins are reflected with Vary, the
+	# permissive "*" fallback is then stripped for everyone else.
+	header Access-Control-Allow-Origin "{$CORS_ALLOWED_ORIGINS:*}"
+
+	# When an allow-list regexp is configured, reflect a matching Origin and add
+	# Vary: Origin. If CORS_ALLOWED_ORIGINS_REGEXP is unset it defaults to a
+	# sentinel that matches no real origin, so the "*" default above stands —
+	# dev convenience preserved. These are response-header mutations attached to
+	# the matcher (NOT a `handle` block — that would short-circuit routing and
+	# stop the proxy from running for allowed origins).
+	@origin_ok header_regexp Origin Origin {$CORS_ALLOWED_ORIGINS_REGEXP:^DISABLED-NO-CORS-ALLOWLIST$}
+	header @origin_ok Access-Control-Allow-Origin "{http.request.header.Origin}"
+	header @origin_ok +Vary "Origin"
+
+	# Preflight: answer OPTIONS fast with 204 (headers above already attached).
 	@cors_preflight method OPTIONS
 	respond @cors_preflight 204
+
+	# --- Edge rate limiting (requires the rate_limit plugin) ------------------
+	# The base caddy:2-alpine image does NOT include this handler. If you build
+	# Caddy with `mholt/caddy-ratelimit` (see SECURITY.md), uncomment the block
+	# and the public API routes are throttled per client IP, returning 429 on
+	# abuse. Defaults are gentle: RATE_LIMIT_BURST events per minute per IP.
+	#
+	# rate_limit {
+	# 	zone laetoli_api {
+	# 		key {http.request.remote_host}
+	# 		events {$RATE_LIMIT_BURST:120}
+	# 		window 1m
+	# 	}
+	# }
 
 	# PostgREST — strip /rest, forward the remainder.
 	handle_path /rest/* {

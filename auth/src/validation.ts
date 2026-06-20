@@ -49,3 +49,24 @@ export function validatePassword(value: unknown): ValidationResult {
 export function normalizeUsername(value: string): string {
   return value.trim().toLowerCase();
 }
+
+// Email is OPTIONAL everywhere. This is a deliberately lenient sanity check
+// (one @, a dot in the domain, no spaces) — real deliverability is proven by
+// the verification flow, not by a regex.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function validateEmail(value: unknown): ValidationResult {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return { ok: false, error: 'Barua pepe inahitajika.' };
+  }
+  const v = value.trim();
+  if (v.length > 254 || !EMAIL_RE.test(v)) {
+    return { ok: false, error: 'Barua pepe si sahihi.' };
+  }
+  return OK;
+}
+
+/** Normalize an email for storage/uniqueness (trim + lowercase). */
+export function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}

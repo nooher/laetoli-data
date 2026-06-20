@@ -47,9 +47,13 @@ We aim to acknowledge within 72 hours.
 - **Input safety** — parameterized SQL everywhere; the admin table/SQL endpoints
   validate identifiers against the live catalog; storage rejects path traversal;
   request bodies are size-capped; uploads are bounded by `STORAGE_MAX_UPLOAD_BYTES`.
-- **Rate limiting** — the auth service rate-limits sensitive endpoints; the
-  multi-tenant API-key layer enforces per-key `rate_limit_per_min` (429 on
-  excess) when enabled.
+- **Configurable CORS** — `Access-Control-Allow-Origin` is driven by env (see
+  **CORS** below). Unset → permissive `*` for dev; set → only vetted origins are
+  reflected, with `Vary: Origin`.
+- **Rate limiting** — the auth service rate-limits sensitive endpoints (the
+  guaranteed floor); an optional **edge** per-IP limiter at Caddy fronts the
+  public API routes (see **Rate limiting** below); the multi-tenant API-key
+  layer enforces per-key `rate_limit_per_min` (429 on excess) when enabled.
 - **Backups & recovery** — scheduled `pg_dump` + retention; optional WAL
   archiving for point-in-time recovery (`docs/PITR.md`).
 - **Supply chain** — Dependabot watches every package + GitHub Actions; CI runs
@@ -67,17 +71,110 @@ We aim to acknowledge within 72 hours.
   `db/migrations/0002_realtime.sql`.
 - **Edge functions run in-process** (operator-trusted, no sandbox). Only deploy
   functions you trust. Stronger isolation (Deno / V8 isolates) is a v2 option.
-- **CORS defaults to `*`.** Lock `Access-Control-Allow-Origin` to your app
-  origins in the `Caddyfile` for production browser deployments.
+- **CORS defaults to `*`.** Convenient for dev; **lock it down for any public
+  deployment** by setting `CORS_ALLOWED_ORIGINS_REGEXP` (see **CORS** below).
+- **Edge rate limiting needs a plugin.** The base `caddy:2-alpine` image does
+  not bundle the `rate_limit` handler, so the edge limiter is OFF until you
+  build a Caddy with it (see **Rate limiting**). The auth service's app-level
+  limiter is always on as the floor.
 - **Identity is username + password** (no email verification / OAuth / OTP yet).
+
+## CORS
+
+`Access-Control-Allow-Origin` is configured at the edge (Caddy) via two env vars
+wired through `docker-compose.yml`:
+
+- **Unset (default):** `Access-Control-Allow-Origin: *` — every origin allowed.
+  Good for local dev and the `@laetoli/data` SDK from anywhere; **not for a
+  public deployment.**
+- **Locked down (production):** leave `CORS_ALLOWED_ORIGINS` empty and set
+  `CORS_ALLOWED_ORIGINS_REGEXP` to an **anchored alternation** of your app
+  origins. A request whose `Origin` matches is **reflected** back as the
+  `Allow-Origin` value with `Vary: Origin`; non-matching origins get **no**
+  `Allow-Origin`, so the browser blocks the cross-origin read.
+
+Turn a comma list into the regexp (escape dots, no trailing slash):
+
+```
+# origins: https://app.example.tz, https://admin.example.tz
+CORS_ALLOWED_ORIGINS_REGEXP=^(https://app\.example\.tz|https://admin\.example\.tz)$
+```
+
+Validate the config after editing: `docker compose run --rm --entrypoint caddy
+caddy validate --config /etc/caddy/Caddyfile` (or `caddy validate` if Caddy is
+installed locally).
+
+## Rate limiting
+
+Two layers, defence in depth:
+
+1. **App-level (always on, the floor):** the auth service per-IP rate-limits its
+   sensitive endpoints regardless of edge config. This cannot be bypassed by a
+   missing plugin.
+2. **Edge (optional, recommended for public exposure):** a Caddy `rate_limit`
+   handler fronts the public API routes (`/rest`, `/auth`, `/storage`,
+   `/functions`) per client IP, returning **429** on abuse. Tuned by
+   `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` (gentle defaults: 10 rps, burst 120/min).
+
+   **Plugin caveat:** the base `caddy:2-alpine` image does **not** include the
+   `rate_limit` handler. Build a Caddy with it (the `rate_limit` block in the
+   `Caddyfile` is commented out until you do):
+
+   ```dockerfile
+   # Dockerfile.caddy
+   FROM caddy:2-builder AS build
+   RUN xcaddy build --with github.com/mholt/caddy-ratelimit
+   FROM caddy:2-alpine
+   COPY --from=build /usr/bin/caddy /usr/bin/caddy
+   ```
+
+   Point the `caddy` service at it (`build: { dockerfile: Dockerfile.caddy }`),
+   then uncomment the `rate_limit` block in the `Caddyfile`.
+
+## RLS audit
+
+RLS in Postgres is the real gatekeeper, so **every application table must have
+RLS enabled with at least one policy.** Migration `db/migrations/0009_rls_audit.sql`
+adds an operator helper to verify this — it surfaces gaps, it does **not**
+force-enable RLS (and it never touches system schemas):
+
+```sql
+SELECT * FROM public.rls_audit;          -- gaps only; EMPTY == all tables protected
+SELECT * FROM public.rls_audit_all;      -- every app table + RLS status
+SELECT * FROM public.rls_audit_summary();-- one-row digest (total / protected / gaps)
+```
+
+`rls_audit` lists any table in a non-system schema that has **RLS disabled** or
+is **enabled with zero policies** (default-deny — confirm it is intentional).
+Run it before exposing the stack publicly and gate your deploy on `gaps = 0`.
+The views/function are granted to `laetoli_admin` only (the catalog of
+unprotected tables is operator information).
+
+## Secret rotation
+
+Rotate `JWT_SECRET`, the DB role passwords, and `ADMIN_API_KEY` periodically and
+after any suspected leak. Scripted path:
+
+```bash
+scripts/rotate-secrets.sh            # all three
+scripts/rotate-secrets.sh --jwt      # just one
+scripts/rotate-secrets.sh --dry-run  # preview
+```
+
+It backs up `.env`, runs the live `ALTER ROLE` for DB rotation, and restarts the
+affected services **in the correct order** so they reconnect cleanly. Full guide
+(including manual steps, restart-order rationale, and rollback) in
+[`docs/ROTATION.md`](docs/ROTATION.md).
 
 ## Operator checklist
 
 - [ ] Strong, unique `POSTGRES_PASSWORD`, `JWT_SECRET` (≥32 chars), `ADMIN_API_KEY` (≥24).
 - [ ] `CADDY_DOMAIN` set to your domain (enables HTTPS); never serve admin over plain HTTP on the public internet.
-- [ ] Restrict CORS origins for production.
+- [ ] Restrict CORS origins for production (`CORS_ALLOWED_ORIGINS_REGEXP` — see **CORS**).
+- [ ] Enable edge rate limiting for public exposure (build Caddy with `rate_limit`, uncomment the block — see **Rate limiting**).
+- [ ] Run the RLS audit and confirm `gaps = 0` (`SELECT * FROM public.rls_audit_summary();` — see **RLS audit**).
 - [ ] Keep `/metrics`, the admin API, and Postgres off the public network (reach via Caddy / private network only).
 - [ ] Verify backups run (`/status`) and test a restore (`docs/PITR.md`).
-- [ ] Rotate `JWT_SECRET` / role passwords periodically (re-run the `ALTER ROLE` step).
+- [ ] Rotate `JWT_SECRET` / role passwords / `ADMIN_API_KEY` periodically (`scripts/rotate-secrets.sh` — see **Secret rotation**).
 
 © 2026 Laetoli Ltd · Apache-2.0

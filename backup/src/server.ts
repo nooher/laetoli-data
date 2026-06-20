@@ -13,13 +13,22 @@ import { loadConfig, usesCron, type BackupConfig } from './config.js';
 import { parseCron, nextRun, type CronFields } from './cron.js';
 import {
   dumpFilename,
+  storageArchiveFilename,
   isManagedDump,
+  isManagedStorageArchive,
   selectForDeletion,
+  selectArchivesForDeletion,
   runBackup,
+  archiveStorageDir,
+  mirrorFile,
+  runOffsiteCmd,
   type DumpRunner,
+  type CmdRunner,
   realDumpRunner,
+  realCmdRunner,
 } from './backup.js';
 import { emptyStatus, type BackupStatus } from './status.js';
+import { renderMetrics } from './metrics.js';
 
 export interface BackupServer {
   httpServer: http.Server;
@@ -36,6 +45,8 @@ export interface ServerDeps {
   config: BackupConfig;
   /** Injected dump runner (defaults to the real pg_dump spawner). */
   runner?: DumpRunner;
+  /** Injected command runner for tar + off-site cmd (defaults to real spawn). */
+  cmdRunner?: CmdRunner;
   /** Injected logger (defaults to console.log). */
   log?: (msg: string) => void;
 }
@@ -43,6 +54,7 @@ export interface ServerDeps {
 export function createServer(deps: ServerDeps): BackupServer {
   const { config } = deps;
   const runner = deps.runner ?? realDumpRunner;
+  const cmdRunner = deps.cmdRunner ?? realCmdRunner;
   const log = deps.log ?? ((m: string) => console.log(`[backup] ${m}`));
 
   const cronMode = usesCron(config);
@@ -50,7 +62,11 @@ export function createServer(deps: ServerDeps): BackupServer {
   const schedule = cronMode
     ? config.cron
     : `every ${config.intervalHours}h`;
-  const status = emptyStatus(cronMode ? 'cron' : 'interval', schedule);
+  const status = emptyStatus(cronMode ? 'cron' : 'interval', schedule, {
+    mirror: Boolean(config.mirrorDir),
+    offsite: Boolean(config.offsiteCmd),
+    storageArchive: Boolean(config.storageDir),
+  });
 
   let timer: NodeJS.Timeout | null = null;
 
@@ -77,6 +93,47 @@ export function createServer(deps: ServerDeps): BackupServer {
     status.totalBytes = bytes;
   }
 
+  /** Delete files matching `match` beyond `keep`, in `dir`. Fail-soft per file. */
+  function pruneDir(
+    dir: string,
+    match: (files: string[], keep: number) => string[]
+  ): void {
+    let files: string[];
+    try {
+      files = readdirSync(dir);
+    } catch {
+      return; // dir may not exist (e.g. mirror drive unplugged) — skip.
+    }
+    for (const name of match(files, config.keep)) {
+      try {
+        unlinkSync(join(dir, name));
+        log(`pruned old backup: ${name} (${dir})`);
+      } catch (e) {
+        log(`failed to prune ${name} in ${dir}: ${errMsg(e)}`);
+      }
+    }
+  }
+
+  /** Copy a finished artifact to the mirror dir (fail-soft, metered). */
+  function mirrorTo(srcPath: string): void {
+    if (!config.mirrorDir) return;
+    try {
+      const dest = mirrorFile(srcPath, config.mirrorDir);
+      status.mirror.lastSuccess = new Date().toISOString();
+      status.mirror.lastError = null;
+      try {
+        status.mirror.lastBytes = statSync(dest).size;
+      } catch {
+        /* best-effort size */
+      }
+      log(`mirrored ${srcPath} -> ${dest}`);
+    } catch (e) {
+      status.mirror.lastError = errMsg(e);
+      status.mirror.errorCount += 1;
+      log(`mirror FAILED for ${srcPath}: ${status.mirror.lastError}`);
+    }
+  }
+
   async function runOnce(now: Date = new Date()): Promise<void> {
     status.lastRun = now.toISOString();
     const outName = dumpFilename(now);
@@ -89,16 +146,61 @@ export function createServer(deps: ServerDeps): BackupServer {
       status.lastError = null;
       log(`dump complete: ${outName}`);
 
-      // Prune old dumps beyond BACKUP_KEEP.
-      const files = readdirSync(config.backupDir);
-      const toDelete = selectForDeletion(files, config.keep);
-      for (const name of toDelete) {
+      // (1) Optional storage-directory archive alongside the pg_dump.
+      let storagePath: string | null = null;
+      if (config.storageDir) {
+        const arcName = storageArchiveFilename(now);
+        storagePath = join(config.backupDir, arcName);
         try {
-          unlinkSync(join(config.backupDir, name));
-          log(`pruned old dump: ${name}`);
+          const bytes = await archiveStorageDir(
+            config.storageDir,
+            storagePath,
+            cmdRunner
+          );
+          status.storageArchive.lastSuccess = new Date().toISOString();
+          status.storageArchive.lastError = null;
+          status.storageArchive.lastBytes = bytes;
+          log(`storage archive complete: ${arcName} (${bytes} bytes)`);
         } catch (e) {
-          log(`failed to prune ${name}: ${errMsg(e)}`);
+          status.storageArchive.lastError = errMsg(e);
+          status.storageArchive.errorCount += 1;
+          storagePath = null; // don't mirror/offsite a failed archive
+          log(`storage archive FAILED: ${status.storageArchive.lastError}`);
         }
+      }
+
+      // (2) Mirror each artifact to the second target (fail-soft).
+      mirrorTo(outPath);
+      if (storagePath) mirrorTo(storagePath);
+
+      // (3) Off-site push hook (fail-soft, metered).
+      if (config.offsiteCmd) {
+        for (const p of storagePath ? [outPath, storagePath] : [outPath]) {
+          try {
+            await runOffsiteCmd(config.offsiteCmd, p, cmdRunner);
+            status.offsite.lastSuccess = new Date().toISOString();
+            status.offsite.lastError = null;
+            try {
+              status.offsite.lastBytes = statSync(p).size;
+            } catch {
+              /* best-effort */
+            }
+            log(`off-site push ok: ${p}`);
+          } catch (e) {
+            status.offsite.lastError = errMsg(e);
+            status.offsite.errorCount += 1;
+            log(`off-site push FAILED for ${p}: ${status.offsite.lastError}`);
+          }
+        }
+      }
+
+      // (4) Prune old dumps + storage archives beyond BACKUP_KEEP, in BOTH the
+      //     primary dir and (if set) the mirror dir.
+      pruneDir(config.backupDir, selectForDeletion);
+      pruneDir(config.backupDir, selectArchivesForDeletion);
+      if (config.mirrorDir) {
+        pruneDir(config.mirrorDir, selectForDeletion);
+        pruneDir(config.mirrorDir, selectArchivesForDeletion);
       }
     } catch (e) {
       status.lastError = errMsg(e);
@@ -130,6 +232,14 @@ export function createServer(deps: ServerDeps): BackupServer {
       refreshInventory();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(status));
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/metrics') {
+      refreshInventory();
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
+      });
+      res.end(renderMetrics(status));
       return;
     }
     res.writeHead(404, { 'Content-Type': 'application/json' });
