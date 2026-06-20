@@ -3,7 +3,8 @@ import type { JSX } from 'react';
 import { AdminApi, ApiError } from '../api';
 import type { Policy, PoliciesResponse } from '../types';
 import { groupBy } from '../lib';
-import { Loading, ErrorBanner, Empty } from '../components/ui';
+import { TableSkeleton, ErrorBanner, Empty } from '../components/ui';
+import { IconShield } from '../icons';
 
 export function Policies({ api }: { api: AdminApi }): JSX.Element {
   const [data, setData] = useState<PoliciesResponse | null>(null);
@@ -21,10 +22,16 @@ export function Policies({ api }: { api: AdminApi }): JSX.Element {
     };
   }, [api]);
 
-  if (loading) return <Loading label="Loading RLS policies…" />;
+  if (loading) return <TableSkeleton columns={5} label="Loading RLS policies…" />;
   if (error) return <ErrorBanner message={error} />;
   if (!data || data.policies.length === 0)
-    return <Empty title="No RLS policies" hint="No row-level security policies are defined on this database." />;
+    return (
+      <Empty
+        title="No RLS policies"
+        hint="No row-level security policies are defined on this database."
+        icon={<IconShield className="empty-ico" />}
+      />
+    );
 
   const grouped = groupBy(data.policies, (p) => `${p.schema}.${p.table}`);
   const rlsMap = new Map(

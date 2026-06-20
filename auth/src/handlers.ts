@@ -3,23 +3,28 @@
 // unit-tested directly (no HTTP server, no live Postgres) by passing a fake Db.
 
 import { randomUUID } from 'node:crypto';
-import type { Db, PublicUser } from './db.js';
+import type { Db, PublicUser, UserRow } from './db.js';
 import { toPublicUser } from './db.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { issueAccessToken, verifyAccessToken, parseBearer } from './jwt.js';
 import {
   generateToken,
+  generateOtpCode,
   hashToken,
   expiryFromNow,
   isExpired,
 } from './tokens.js';
 import type { DeliveryMode } from './config.js';
+import type { Mailer } from './mailer.js';
+import type { SmsSender } from './sms.js';
 import {
   validateUsername,
   validatePassword,
   validateEmail,
+  validatePhone,
   normalizeUsername,
   normalizeEmail,
+  normalizePhone,
 } from './validation.js';
 
 export interface HandlerDeps {
@@ -36,6 +41,16 @@ export interface HandlerDeps {
   resetDelivery?: DeliveryMode;
   /** Email-verification delivery mode ('log' default). */
   emailDelivery?: DeliveryMode;
+  /** Public base URL for building reset/verify links (raw token when unset). */
+  baseUrl?: string;
+  /** Real SMTP mailer (injectable; built from env in production). */
+  mailer?: Mailer;
+  /** NextSMS-compatible SMS sender (injectable; built from env in production). */
+  sms?: SmsSender;
+  /** OTP code lifetime in seconds (default 5 min). */
+  otpExpiry?: number;
+  /** Max wrong OTP guesses before the code is dead (default 5). */
+  otpMaxAttempts?: number;
 }
 
 export interface HandlerResult {
@@ -47,6 +62,8 @@ export interface HandlerResult {
 const DEFAULT_REFRESH_EXPIRY = 60 * 60 * 24 * 30; // 30d
 const DEFAULT_RESET_EXPIRY = 60 * 60; // 1h
 const DEFAULT_EMAIL_VERIFY_EXPIRY = 60 * 60 * 24; // 24h
+const DEFAULT_OTP_EXPIRY = 5 * 60; // 5min
+const DEFAULT_OTP_MAX_ATTEMPTS = 5;
 
 interface AuthSuccessBody {
   user: PublicUser;
@@ -339,7 +356,9 @@ export async function handlePasswordForgot(
   });
 
   const mode: DeliveryMode = deps.resetDelivery ?? 'log';
-  deliver('reset', mode, user.id, value);
+  // Failures must NEVER change the generic 200 (no enumeration) — deliver()
+  // catches its own errors, but guard here too for total safety.
+  await deliver(deps, 'reset', mode, user, value);
   if (mode === 'log') {
     // Dev/offline convenience: surface the token to the caller.
     return { status: 200, body: { ...generic.body, reset_token: value } };
@@ -413,7 +432,7 @@ export async function handleEmailVerifyRequest(
   });
 
   const mode: DeliveryMode = deps.emailDelivery ?? 'log';
-  deliver('email-verify', mode, user.id, value);
+  await deliver(deps, 'email-verify', mode, user, value);
   const body: Record<string, unknown> = {
     message: 'Tumetuma kiungo cha kuthibitisha barua pepe.',
   };
@@ -451,7 +470,7 @@ async function resolveUser(
   deps: HandlerDeps,
   username: unknown,
   email: unknown
-): Promise<{ id: string } | null> {
+): Promise<UserRow | null> {
   if (typeof username === 'string' && username.trim() !== '') {
     const u = await deps.db.findByUsername(normalizeUsername(username));
     if (u) return u;
@@ -464,22 +483,189 @@ async function resolveUser(
 }
 
 /**
- * Delivery seam. In 'log' mode (sovereign/offline default) we log the token so
- * an operator can read it; 'email' is the wiring point for a real mailer/SMS
- * sender — NO external call is made here. Never logs the plaintext in 'email'
- * mode (the future sender owns delivery).
+ * Delivery seam — now ACTUALLY sends.
+ *   * 'log'   — sovereign/offline default: log the token so an operator can read
+ *              it (handlers also return it in the response, as before).
+ *   * 'email' — compose a reset/verify message (a link when baseUrl is set, else
+ *              the raw token) and send via the injected mailer to user.email.
+ *   * 'sms'   — text the token to user.phone via the injected NextSMS sender.
+ * Failures are caught + logged and NEVER propagate — callers (e.g.
+ * /password/forgot) must return the same generic 200 regardless. Never logs the
+ * plaintext token in email/sms mode (the sender owns delivery).
  */
-function deliver(
+async function deliver(
+  deps: HandlerDeps,
   kind: 'reset' | 'email-verify',
   mode: DeliveryMode,
-  userId: string,
+  user: UserRow,
   value: string
-): void {
+): Promise<void> {
   if (mode === 'log') {
-    console.log(`[auth] ${kind} token for user ${userId}: ${value}`);
-  } else {
-    // mode === 'email': hand off to the (not-yet-wired) sender. Intentionally
-    // a no-op seam; do NOT log the secret here.
-    console.log(`[auth] ${kind} token issued for user ${userId} (delivery=email)`);
+    console.log(`[auth] ${kind} token for user ${user.id}: ${value}`);
+    return;
   }
+
+  try {
+    if (mode === 'email') {
+      if (!user.email) {
+        console.warn(`[auth] ${kind}: delivery=email but user ${user.id} has no email; skipped.`);
+        return;
+      }
+      const msg = composeMessage(kind, value, deps.baseUrl);
+      if (deps.mailer) {
+        await deps.mailer.sendEmail({ to: user.email, ...msg });
+      } else {
+        console.warn(`[auth] ${kind}: delivery=email but no mailer wired; skipped.`);
+      }
+    } else if (mode === 'sms') {
+      if (!user.phone) {
+        console.warn(`[auth] ${kind}: delivery=sms but user ${user.id} has no phone; skipped.`);
+        return;
+      }
+      const msg = composeMessage(kind, value, deps.baseUrl);
+      if (deps.sms) {
+        await deps.sms.sendSms({ to: user.phone, text: msg.text });
+      } else {
+        console.warn(`[auth] ${kind}: delivery=sms but no sms sender wired; skipped.`);
+      }
+    }
+  } catch (e) {
+    // Security: never crash the request, never leak via differing responses.
+    console.error(`[auth] ${kind} delivery (${mode}) failed for user ${user.id}:`, e);
+  }
+}
+
+/** Compose the human-facing reset/verify message (link if baseUrl, else token). */
+function composeMessage(
+  kind: 'reset' | 'email-verify',
+  value: string,
+  baseUrl?: string
+): { subject: string; text: string; html: string } {
+  const base = baseUrl?.replace(/\/+$/, '');
+  if (kind === 'reset') {
+    const link = base ? `${base}/auth/password/reset?token=${encodeURIComponent(value)}` : null;
+    const action = link ?? `Tokeni / token: ${value}`;
+    return {
+      subject: 'Laetoli Data — kuweka upya nenosiri (password reset)',
+      text:
+        `Tumepokea ombi la kuweka upya nenosiri lako.\n` +
+        `(We received a request to reset your password.)\n\n${action}\n\n` +
+        `Kama hukuomba, puuza ujumbe huu. (If you did not request this, ignore this message.)`,
+      html:
+        `<p>Tumepokea ombi la kuweka upya nenosiri lako.<br>` +
+        `<em>(We received a request to reset your password.)</em></p>` +
+        (link
+          ? `<p><a href="${link}">Weka upya nenosiri / Reset password</a></p>`
+          : `<p>Tokeni / token: <code>${value}</code></p>`) +
+        `<p>Kama hukuomba, puuza ujumbe huu. <em>(If you did not request this, ignore this message.)</em></p>`,
+    };
+  }
+  const link = base ? `${base}/auth/email/verify/confirm?token=${encodeURIComponent(value)}` : null;
+  const action = link ?? `Tokeni / token: ${value}`;
+  return {
+    subject: 'Laetoli Data — thibitisha barua pepe (verify your email)',
+    text:
+      `Thibitisha barua pepe yako. (Please verify your email.)\n\n${action}`,
+    html:
+      `<p>Thibitisha barua pepe yako. <em>(Please verify your email.)</em></p>` +
+      (link
+        ? `<p><a href="${link}">Thibitisha / Verify email</a></p>`
+        : `<p>Tokeni / token: <code>${value}</code></p>`),
+  };
+}
+
+// =============================================================================
+// PHONE OTP (sovereign passwordless login over SMS).
+//   * POST /otp/request {phone} — generate a 6-digit code, store it HASHED with
+//     a short expiry + attempt counter, and text it via the SMS channel. Always
+//     returns a generic 200 (no enumeration). In 'log' mode the code is
+//     returned/logged for dev.
+//   * POST /otp/verify {phone, code} — check hash + expiry + attempts; on
+//     success issue the SAME access + refresh tokens as login.
+// =============================================================================
+export async function handleOtpRequest(
+  deps: HandlerDeps,
+  input: { phone?: unknown }
+): Promise<HandlerResult> {
+  const generic = {
+    status: 200,
+    body: { message: 'Kama namba ni sahihi, tumetuma msimbo wa kuthibitisha.' } as Record<
+      string,
+      unknown
+    >,
+  };
+
+  const v = validatePhone(input.phone);
+  if (!v.ok) return { status: 400, body: err(v.error!) };
+  const phone = normalizePhone(input.phone as string);
+
+  // Find-or-create the phone identity (passwordless accounts).
+  const user = await deps.db.createPhoneUser(phone);
+
+  const code = generateOtpCode();
+  await deps.db.createOtpCode({
+    userId: user.id,
+    phone,
+    codeHash: hashToken(code),
+    expiresAt: expiryFromNow(deps.otpExpiry ?? DEFAULT_OTP_EXPIRY),
+  });
+
+  // In log mode we surface the code; otherwise we text it via the SMS sender.
+  // (resetDelivery/emailDelivery are token-channels; OTP is inherently SMS, so
+  // we use the sms sender directly and treat 'log' as the dev/offline fallback.)
+  const useSms = deps.sms !== undefined;
+  if (useSms) {
+    try {
+      await deps.sms!.sendSms({
+        to: phone,
+        text: `Laetoli Data: msimbo wako ni ${code}. Utaisha muda baada ya dakika 5. (Your code expires in 5 minutes.)`,
+      });
+    } catch (e) {
+      // Never crash / never enumerate; the request still returns generic 200.
+      console.error(`[auth] otp delivery failed for ${phone}:`, e);
+    }
+  } else {
+    console.log(`[auth] otp code for ${phone}: ${code}`);
+  }
+
+  // Dev/offline convenience: when no real SMS sender is wired, return the code.
+  if (!useSms) {
+    return { status: 200, body: { ...generic.body, code } };
+  }
+  return generic;
+}
+
+export async function handleOtpVerify(
+  deps: HandlerDeps,
+  input: { phone?: unknown; code?: unknown },
+  userAgent?: string | null
+): Promise<HandlerResult> {
+  const invalid = {
+    status: 400,
+    body: err('Msimbo si sahihi au umeisha muda.'),
+  };
+
+  const v = validatePhone(input.phone);
+  if (!v.ok) return { status: 400, body: err(v.error!) };
+  if (typeof input.code !== 'string' || input.code.trim() === '') return invalid;
+
+  const phone = normalizePhone(input.phone as string);
+  const row = await deps.db.findLatestOtpByPhone(phone);
+  if (!row || row.used_at || isExpired(row.expires_at)) return invalid;
+
+  const maxAttempts = deps.otpMaxAttempts ?? DEFAULT_OTP_MAX_ATTEMPTS;
+  if (row.attempts >= maxAttempts) return invalid;
+
+  const matches = hashToken(input.code.trim()) === row.code_hash;
+  if (!matches) {
+    await deps.db.incrementOtpAttempts(row.id);
+    return invalid;
+  }
+
+  // Success: consume the code and issue a normal session.
+  await deps.db.markOtpUsed(row.id);
+  const user = await deps.db.findById(row.user_id);
+  if (!user) return invalid;
+
+  return { status: 200, body: await authSuccess(deps, toPublicUser(user), userAgent) };
 }

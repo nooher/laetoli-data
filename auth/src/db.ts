@@ -12,6 +12,7 @@ export interface UserRow {
   is_anonymous: boolean;
   email: string | null;
   email_verified: boolean;
+  phone: string | null;
   created_at: string;
 }
 
@@ -22,6 +23,7 @@ export interface PublicUser {
   is_anonymous: boolean;
   email: string | null;
   email_verified: boolean;
+  phone: string | null;
 }
 
 export function toPublicUser(row: UserRow): PublicUser {
@@ -31,6 +33,7 @@ export function toPublicUser(row: UserRow): PublicUser {
     is_anonymous: row.is_anonymous,
     email: row.email,
     email_verified: row.email_verified,
+    phone: row.phone,
   };
 }
 
@@ -56,6 +59,18 @@ export interface SingleUseTokenRow {
   created_at: string;
 }
 
+/** A phone-OTP code row (single-use, hashed, attempt-limited). */
+export interface OtpCodeRow {
+  id: string;
+  user_id: string;
+  phone: string;
+  code_hash: string;
+  expires_at: string;
+  attempts: number;
+  used_at: string | null;
+  created_at: string;
+}
+
 /**
  * The dependency-injection seam: a tiny data interface the handlers use.
  * Implemented for real by `createPgDb`, and faked in tests.
@@ -64,12 +79,15 @@ export interface Db {
   findByUsername(username: string): Promise<UserRow | null>;
   findById(id: string): Promise<UserRow | null>;
   findByEmail(email: string): Promise<UserRow | null>;
+  findByPhone(phone: string): Promise<UserRow | null>;
   createUser(input: {
     username: string;
     passwordHash: string;
     email?: string | null;
   }): Promise<UserRow>;
   createAnonymousUser(): Promise<UserRow>;
+  /** Create (or fetch) a phone-only user for SMS-OTP login. */
+  createPhoneUser(phone: string): Promise<UserRow>;
   /** Set a new bcrypt hash for a user (password reset). */
   updatePasswordHash(userId: string, passwordHash: string): Promise<void>;
   /** Set the user's email + mark verified (email-verify confirm). */
@@ -109,6 +127,18 @@ export interface Db {
   ): Promise<SingleUseTokenRow | null>;
   markEmailVerificationTokenUsed(id: string): Promise<void>;
 
+  // ---- phone-OTP codes (single-use, hashed, attempt-limited) -------------
+  createOtpCode(input: {
+    userId: string;
+    phone: string;
+    codeHash: string;
+    expiresAt: string;
+  }): Promise<OtpCodeRow>;
+  /** The most recent unconsumed OTP for a phone (caller checks expiry/attempts). */
+  findLatestOtpByPhone(phone: string): Promise<OtpCodeRow | null>;
+  incrementOtpAttempts(id: string): Promise<void>;
+  markOtpUsed(id: string): Promise<void>;
+
   /** Liveness check for /health. */
   ping(): Promise<void>;
   close(): Promise<void>;
@@ -127,11 +157,13 @@ export function createPgDb(config: AuthConfig): Db {
       });
 
   const SELECT_COLS =
-    'id, username, password_hash, is_anonymous, email, email_verified, created_at';
+    'id, username, password_hash, is_anonymous, email, email_verified, phone, created_at';
   const REFRESH_COLS =
     'id, user_id, token_hash, family_id, expires_at, revoked_at, created_at, user_agent';
   const SINGLE_USE_COLS =
     'id, user_id, token_hash, expires_at, used_at, created_at';
+  const OTP_COLS =
+    'id, user_id, phone, code_hash, expires_at, attempts, used_at, created_at';
 
   return {
     async findByUsername(username) {
@@ -174,6 +206,26 @@ export function createPgDb(config: AuthConfig): Db {
          VALUES (NULL, NULL, true)
          RETURNING ${SELECT_COLS}`,
         []
+      );
+      return rows[0];
+    },
+
+    async findByPhone(phone) {
+      const { rows } = await pool.query<UserRow>(
+        `SELECT ${SELECT_COLS} FROM auth.users WHERE phone = $1 LIMIT 1`,
+        [phone]
+      );
+      return rows[0] ?? null;
+    },
+
+    async createPhoneUser(phone) {
+      // Upsert-ish: a concurrent request may have just created this phone user.
+      const { rows } = await pool.query<UserRow>(
+        `INSERT INTO auth.users (phone, is_anonymous)
+         VALUES ($1, false)
+         ON CONFLICT (phone) WHERE phone IS NOT NULL DO UPDATE SET phone = EXCLUDED.phone
+         RETURNING ${SELECT_COLS}`,
+        [phone]
       );
       return rows[0];
     },
@@ -288,6 +340,42 @@ export function createPgDb(config: AuthConfig): Db {
     async markEmailVerificationTokenUsed(id) {
       await pool.query(
         `UPDATE auth.email_verification_tokens SET used_at = now()
+         WHERE id = $1 AND used_at IS NULL`,
+        [id]
+      );
+    },
+
+    // ---- phone-OTP codes ---------------------------------------------------
+    async createOtpCode({ userId, phone, codeHash, expiresAt }) {
+      const { rows } = await pool.query<OtpCodeRow>(
+        `INSERT INTO auth.otp_codes (user_id, phone, code_hash, expires_at)
+         VALUES ($1, $2, $3, $4)
+         RETURNING ${OTP_COLS}`,
+        [userId, phone, codeHash, expiresAt]
+      );
+      return rows[0];
+    },
+
+    async findLatestOtpByPhone(phone) {
+      const { rows } = await pool.query<OtpCodeRow>(
+        `SELECT ${OTP_COLS} FROM auth.otp_codes
+         WHERE phone = $1 AND used_at IS NULL
+         ORDER BY created_at DESC LIMIT 1`,
+        [phone]
+      );
+      return rows[0] ?? null;
+    },
+
+    async incrementOtpAttempts(id) {
+      await pool.query(
+        `UPDATE auth.otp_codes SET attempts = attempts + 1 WHERE id = $1`,
+        [id]
+      );
+    },
+
+    async markOtpUsed(id) {
+      await pool.query(
+        `UPDATE auth.otp_codes SET used_at = now()
          WHERE id = $1 AND used_at IS NULL`,
         [id]
       );

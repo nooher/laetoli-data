@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS auth.users (
   is_anonymous   boolean     NOT NULL DEFAULT false,
   email          text,
   email_verified boolean     NOT NULL DEFAULT false,
+  phone          text,
   created_at     timestamptz NOT NULL DEFAULT now()
 );
 
@@ -33,6 +34,10 @@ CREATE TABLE IF NOT EXISTS auth.users (
 -- unique only WHEN PRESENT — a partial unique index allows many NULL emails.
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
   ON auth.users (email) WHERE email IS NOT NULL;
+
+-- Phone is OPTIONAL too (SMS-OTP identity); unique only WHEN PRESENT.
+CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique
+  ON auth.users (phone) WHERE phone IS NOT NULL;
 
 COMMENT ON TABLE  auth.users IS 'Identity store. Written only by the laetoli_auth service role.';
 COMMENT ON COLUMN auth.users.password_hash  IS 'bcrypt hash; NULL for anonymous users.';
@@ -90,6 +95,25 @@ CREATE INDEX IF NOT EXISTS email_verification_tokens_user_idx
 CREATE INDEX IF NOT EXISTS email_verification_tokens_expiry_idx
   ON auth.email_verification_tokens (expires_at);
 
+-- Phone-OTP codes (single-use, hashed, attempt-limited). See 0011_phone_otp.sql
+-- for the full rationale; kept here so fresh boots get the schema too.
+CREATE TABLE IF NOT EXISTS auth.otp_codes (
+  id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    uuid        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  phone      text        NOT NULL,
+  code_hash  text        NOT NULL,
+  expires_at timestamptz NOT NULL,
+  attempts   integer     NOT NULL DEFAULT 0,
+  used_at    timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE auth.otp_codes IS
+  'Single-use, short-lived phone-OTP codes (sha256-hashed). attempts caps brute '
+  'force; used_at marks consumption. Never exposed through PostgREST.';
+CREATE INDEX IF NOT EXISTS otp_codes_phone_idx  ON auth.otp_codes (phone);
+CREATE INDEX IF NOT EXISTS otp_codes_user_idx   ON auth.otp_codes (user_id);
+CREATE INDEX IF NOT EXISTS otp_codes_expiry_idx ON auth.otp_codes (expires_at);
+
 -- Cleanup helper: delete expired (and consumed/revoked) token rows. Run from a
 -- scheduler.jobs kind='sql' entry, e.g. nightly.
 CREATE OR REPLACE FUNCTION auth.cleanup_expired_tokens()
@@ -102,9 +126,11 @@ AS $$
     WHERE expires_at < now() OR used_at IS NOT NULL;
   DELETE FROM auth.email_verification_tokens
     WHERE expires_at < now() OR used_at IS NOT NULL;
+  DELETE FROM auth.otp_codes
+    WHERE expires_at < now() OR used_at IS NOT NULL;
 $$;
 COMMENT ON FUNCTION auth.cleanup_expired_tokens() IS
-  'Deletes expired/consumed auth tokens. Schedule nightly via scheduler.jobs.';
+  'Deletes expired/consumed auth tokens + OTP codes. Schedule nightly via scheduler.jobs.';
 
 -- --- auth.uid(): the JWT subject (current user id) ----------------------------
 -- PostgREST injects the verified JWT claims as the `request.jwt.claims` GUC.
@@ -145,6 +171,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON auth.users TO laetoli_auth;
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth.refresh_tokens TO laetoli_auth;
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth.reset_tokens TO laetoli_auth;
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth.email_verification_tokens TO laetoli_auth;
+GRANT SELECT, INSERT, UPDATE, DELETE ON auth.otp_codes TO laetoli_auth;
 
 -- Request roles (and authenticator) need EXECUTE on the helpers so RLS policies
 -- that call auth.uid()/auth.role() work, plus USAGE on the schema to resolve them.

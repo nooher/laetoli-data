@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 import { AdminApi, ApiError } from '../api';
 import type { AuthUser } from '../types';
 import { formatDate } from '../lib';
-import { Loading, ErrorBanner, OkBanner, Empty } from '../components/ui';
+import { TableSkeleton, ErrorBanner, Toast, Empty } from '../components/ui';
 import { IconTrash } from '../icons';
 
 const PAGE = 50;
@@ -47,14 +47,14 @@ export function Authentication({ api }: { api: AdminApi }): JSX.Element {
     }
   }
 
-  if (loading) return <Loading label="Loading users…" />;
+  if (loading) return <TableSkeleton columns={7} label="Loading users…" />;
   if (error) return <ErrorBanner message={error} />;
 
   const showingTo = Math.min(offset + PAGE, count);
 
   return (
     <>
-      {ok ? <OkBanner message={ok} /> : null}
+      {ok ? <Toast message={ok} onClose={() => setOk(null)} /> : null}
       {!users || users.length === 0 ? (
         <Empty title="No users" hint="No accounts have signed up to this backend yet." />
       ) : (

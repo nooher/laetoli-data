@@ -42,6 +42,18 @@ export function tokenMatchesHash(value: string, storedHash: string): boolean {
   return safeEqualHex(hashToken(value), storedHash);
 }
 
+/**
+ * Generate a numeric one-time code (default 6 digits) for SMS OTP. Uses
+ * rejection-free modular reduction over crypto bytes — fine for a short-lived,
+ * attempt-limited code (entropy is bounded by the digit count by design).
+ */
+export function generateOtpCode(digits = 6): string {
+  const max = 10 ** digits;
+  // 6 random bytes → 48 bits, far above 10^6, so modulo bias is negligible.
+  const n = Number(randomBytes(6).readUIntBE(0, 6) % max);
+  return n.toString().padStart(digits, '0');
+}
+
 /** Seconds → an absolute ISO expiry timestamp from a base time (default now). */
 export function expiryFromNow(seconds: number, nowMs: number = Date.now()): string {
   return new Date(nowMs + seconds * 1000).toISOString();

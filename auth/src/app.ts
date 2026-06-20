@@ -14,11 +14,15 @@ import {
   handlePasswordReset,
   handleEmailVerifyRequest,
   handleEmailVerifyConfirm,
+  handleOtpRequest,
+  handleOtpVerify,
   type HandlerDeps,
 } from './handlers.js';
 import { createRateLimiter, type RateLimiter } from './ratelimit.js';
 import { Registry } from './metrics.js';
 import type { DeliveryMode } from './config.js';
+import type { Mailer } from './mailer.js';
+import type { SmsSender } from './sms.js';
 
 export interface AppDeps {
   db: Db;
@@ -29,6 +33,16 @@ export interface AppDeps {
   emailVerifyExpiry?: number;
   resetDelivery?: DeliveryMode;
   emailDelivery?: DeliveryMode;
+  /** Public base URL for reset/verify links (raw token when unset). */
+  baseUrl?: string;
+  /** Real SMTP mailer (injectable; built from env in server.ts). */
+  mailer?: Mailer;
+  /** NextSMS-compatible SMS sender (injectable; built from env in server.ts). */
+  sms?: SmsSender;
+  /** OTP code lifetime in seconds. */
+  otpExpiry?: number;
+  /** Max wrong OTP guesses before the code is dead. */
+  otpMaxAttempts?: number;
   /** Optional override; defaults to a sensible auth limiter. */
   limiter?: RateLimiter;
   /** Optional shared metrics registry (defaults to a fresh one). */
@@ -54,6 +68,8 @@ function routeLabel(path: string): string {
     '/password/reset',
     '/email/verify/request',
     '/email/verify/confirm',
+    '/otp/request',
+    '/otp/verify',
   ];
   return known.includes(path) ? path : 'other';
 }
@@ -116,6 +132,11 @@ export function createApp(deps: AppDeps): Express {
     emailVerifyExpiry: deps.emailVerifyExpiry,
     resetDelivery: deps.resetDelivery,
     emailDelivery: deps.emailDelivery,
+    baseUrl: deps.baseUrl,
+    mailer: deps.mailer,
+    sms: deps.sms,
+    otpExpiry: deps.otpExpiry,
+    otpMaxAttempts: deps.otpMaxAttempts,
   };
 
   const ua = (req: Request): string | null => req.header('user-agent') ?? null;
@@ -234,6 +255,26 @@ export function createApp(deps: AppDeps): Express {
     if (!guard(req, res)) return;
     try {
       send(res, await handleEmailVerifyConfirm(handlerDeps, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Phone-OTP: request a 6-digit code by SMS (sovereign passwordless login).
+  app.post('/otp/request', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleOtpRequest(handlerDeps, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Phone-OTP: verify the code → issue access + refresh tokens (like login).
+  app.post('/otp/verify', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleOtpVerify(handlerDeps, req.body ?? {}, ua(req)));
     } catch (e) {
       next(e);
     }

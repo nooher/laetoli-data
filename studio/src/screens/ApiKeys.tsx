@@ -9,7 +9,7 @@ import type {
   Project,
 } from '../types';
 import { formatDate, formatCount, maskKey } from '../lib';
-import { Loading, ErrorBanner, OkBanner, Empty, Modal } from '../components/ui';
+import { Loading, TableSkeleton, ErrorBanner, Toast, Empty, Modal } from '../components/ui';
 import { IconPlus, IconTrash, IconKey, IconCopy } from '../icons';
 
 export function ApiKeys({ api }: { api: AdminApi }): JSX.Element {
@@ -88,7 +88,7 @@ export function ApiKeys({ api }: { api: AdminApi }): JSX.Element {
 
   return (
     <>
-      {ok ? <OkBanner message={ok} /> : null}
+      {ok ? <Toast message={ok} onClose={() => setOk(null)} /> : null}
       {error ? <ErrorBanner message={error} /> : null}
 
       <div className="toolbar">
@@ -107,6 +107,12 @@ export function ApiKeys({ api }: { api: AdminApi }): JSX.Element {
         <Empty
           title="No projects yet"
           hint="Create a project to start issuing API keys for your client apps."
+          icon={<IconKey className="empty-ico" />}
+          action={
+            <button className="btn btn-green btn-sm" onClick={() => setCreating(true)}>
+              <IconPlus className="nav-ico" /> New project
+            </button>
+          }
         />
       ) : (
         <div className="spread" style={{ alignItems: 'flex-start', gap: 24 }}>
@@ -311,7 +317,7 @@ function ProjectDetail({
   }
 
   if (!project) return <Empty title="No project selected" />;
-  if (loading) return <Loading label="Loading API keys…" />;
+  if (loading) return <TableSkeleton columns={8} label="Loading API keys…" />;
   if (error) return <ErrorBanner message={error} />;
 
   const usageById = new Map((usage ?? []).map((u) => [u.key_id, u]));

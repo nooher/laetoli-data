@@ -114,6 +114,30 @@ describe('HTTP routes (supertest, fake Db)', () => {
     expect(login.status).toBe(200);
   });
 
+  it('full flow: /otp/request → /otp/verify issues a session (log mode)', async () => {
+    const a = app();
+    const req = await request(a).post('/otp/request').send({ phone: '0700000000' });
+    expect(req.status).toBe(200);
+    const code = req.body.code; // log mode (no sms sender) returns it
+    expect(code).toMatch(/^\d{6}$/);
+
+    const verify = await request(a)
+      .post('/otp/verify')
+      .send({ phone: '0700000000', code });
+    expect(verify.status).toBe(200);
+    expect(verify.body.access_token).toBeTruthy();
+    expect(verify.body.user.phone).toBe('+255700000000');
+  });
+
+  it('POST /otp/verify wrong code → 400', async () => {
+    const a = app();
+    await request(a).post('/otp/request').send({ phone: '0700000000' });
+    const res = await request(a)
+      .post('/otp/verify')
+      .send({ phone: '0700000000', code: '000000' });
+    expect(res.status).toBe(400);
+  });
+
   it('unknown route → 404 JSON', async () => {
     const res = await request(app()).get('/nope');
     expect(res.status).toBe(404);

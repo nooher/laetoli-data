@@ -7,6 +7,7 @@ import type {
   UserRow,
   RefreshTokenRow,
   SingleUseTokenRow,
+  OtpCodeRow,
 } from '../db.js';
 
 export function createFakeDb(seed: UserRow[] = []): Db & {
@@ -14,12 +15,14 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
   refreshTokens: RefreshTokenRow[];
   resetTokens: SingleUseTokenRow[];
   emailVerificationTokens: SingleUseTokenRow[];
+  otpCodes: OtpCodeRow[];
   failNextCreateWithUniqueViolation: () => void;
 } {
   const rows: UserRow[] = [...seed];
   const refreshTokens: RefreshTokenRow[] = [];
   const resetTokens: SingleUseTokenRow[] = [];
   const emailVerificationTokens: SingleUseTokenRow[] = [];
+  const otpCodes: OtpCodeRow[] = [];
   let pendingUniqueViolation = false;
 
   return {
@@ -27,6 +30,7 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
     refreshTokens,
     resetTokens,
     emailVerificationTokens,
+    otpCodes,
     failNextCreateWithUniqueViolation() {
       pendingUniqueViolation = true;
     },
@@ -43,6 +47,10 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
       return rows.find((r) => r.email === email) ?? null;
     },
 
+    async findByPhone(phone) {
+      return rows.find((r) => r.phone === phone) ?? null;
+    },
+
     async createUser({ username, passwordHash, email }) {
       if (pendingUniqueViolation) {
         pendingUniqueViolation = false;
@@ -57,6 +65,7 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
         is_anonymous: false,
         email: email ?? null,
         email_verified: false,
+        phone: null,
         created_at: new Date().toISOString(),
       };
       rows.push(row);
@@ -71,6 +80,24 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
         is_anonymous: true,
         email: null,
         email_verified: false,
+        phone: null,
+        created_at: new Date().toISOString(),
+      };
+      rows.push(row);
+      return row;
+    },
+
+    async createPhoneUser(phone) {
+      const existing = rows.find((r) => r.phone === phone);
+      if (existing) return existing;
+      const row: UserRow = {
+        id: randomUUID(),
+        username: null,
+        password_hash: null,
+        is_anonymous: false,
+        email: null,
+        email_verified: false,
+        phone,
         created_at: new Date().toISOString(),
       };
       rows.push(row);
@@ -171,6 +198,39 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
 
     async markEmailVerificationTokenUsed(id) {
       const t = emailVerificationTokens.find((r) => r.id === id);
+      if (t && !t.used_at) t.used_at = new Date().toISOString();
+    },
+
+    // ---- phone-OTP codes ---------------------------------------------------
+    async createOtpCode({ userId, phone, codeHash, expiresAt }) {
+      const row: OtpCodeRow = {
+        id: randomUUID(),
+        user_id: userId,
+        phone,
+        code_hash: codeHash,
+        expires_at: expiresAt,
+        attempts: 0,
+        used_at: null,
+        created_at: new Date().toISOString(),
+      };
+      otpCodes.push(row);
+      return row;
+    },
+
+    async findLatestOtpByPhone(phone) {
+      const matches = otpCodes
+        .filter((t) => t.phone === phone && !t.used_at)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at));
+      return matches[0] ?? null;
+    },
+
+    async incrementOtpAttempts(id) {
+      const t = otpCodes.find((r) => r.id === id);
+      if (t) t.attempts += 1;
+    },
+
+    async markOtpUsed(id) {
+      const t = otpCodes.find((r) => r.id === id);
       if (t && !t.used_at) t.used_at = new Date().toISOString();
     },
 

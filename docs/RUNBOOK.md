@@ -3,7 +3,9 @@
 Practical, day-to-day operation of a Laetoli Data node — written for a single
 box (a Raspberry Pi 5 or a small VPS) serving real users, including in
 Tanzania. Pair this with `DEPLOY.md` (first install), `RASPBERRY_PI.md` (Pi
-specifics), `SECURITY.md` (CORS / RLS / rotation), and `PITR.md`.
+specifics), `SECURITY.md` (CORS / RLS / rotation), and `PITR.md`. To see what
+runs *on* the node, build the worked example — `EXAMPLE.md` /
+`examples/daftari/`.
 
 All commands run from the repo root unless noted. `docker compose` = the stack.
 

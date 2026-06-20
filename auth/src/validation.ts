@@ -70,3 +70,29 @@ export function validateEmail(value: unknown): ValidationResult {
 export function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
+
+// Phone (for OTP). Lenient E.164-ish check: optional leading +, 7–15 digits.
+// Tanzanian numbers normalize to +255XXXXXXXXX, but we accept any country.
+const PHONE_RE = /^\+?[0-9]{7,15}$/;
+
+export function validatePhone(value: unknown): ValidationResult {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return { ok: false, error: 'Namba ya simu inahitajika.' };
+  }
+  const v = normalizePhone(value);
+  if (!PHONE_RE.test(v)) {
+    return { ok: false, error: 'Namba ya simu si sahihi.' };
+  }
+  return OK;
+}
+
+/**
+ * Normalize a phone number for storage/uniqueness. Strips spaces, dashes and
+ * parentheses; converts a Tanzanian local "0XXXXXXXXX" to "+255XXXXXXXXX".
+ */
+export function normalizePhone(value: string): string {
+  let v = value.trim().replace(/[\s()\-.]/g, '');
+  if (v.startsWith('00')) v = '+' + v.slice(2);
+  if (/^0[0-9]{9}$/.test(v)) v = '+255' + v.slice(1);
+  return v;
+}

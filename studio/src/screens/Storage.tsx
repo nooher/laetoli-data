@@ -3,7 +3,8 @@ import type { JSX } from 'react';
 import { AdminApi, ApiError } from '../api';
 import type { Bucket, StorageObject } from '../types';
 import { formatBytes, formatDate } from '../lib';
-import { Loading, ErrorBanner, Empty } from '../components/ui';
+import { Loading, TableSkeleton, ErrorBanner, Empty } from '../components/ui';
+import { IconStorage } from '../icons';
 
 export function Storage({ api }: { api: AdminApi }): JSX.Element {
   const [buckets, setBuckets] = useState<Bucket[] | null>(null);
@@ -28,7 +29,13 @@ export function Storage({ api }: { api: AdminApi }): JSX.Element {
   if (error) return <ErrorBanner message={error} />;
   if (!buckets) return <Loading label="Loading buckets…" />;
   if (buckets.length === 0)
-    return <Empty title="No buckets" hint="Create a storage bucket to start uploading files." />;
+    return (
+      <Empty
+        title="No buckets"
+        hint="Create a storage bucket to start uploading files."
+        icon={<IconStorage className="empty-ico" />}
+      />
+    );
 
   return (
     <div className="spread" style={{ alignItems: 'flex-start', gap: 24 }}>
@@ -74,10 +81,16 @@ function ObjectList({ api, bucket }: { api: AdminApi; bucket: string }): JSX.Ele
     };
   }, [api, bucket]);
 
-  if (loading) return <Loading label="Loading objects…" />;
+  if (loading) return <TableSkeleton columns={5} label="Loading objects…" />;
   if (error) return <ErrorBanner message={error} />;
   if (!objects || objects.length === 0)
-    return <Empty title="Empty bucket" hint={`No objects in “${bucket}”.`} />;
+    return (
+      <Empty
+        title="Empty bucket"
+        hint={`No objects in “${bucket}”.`}
+        icon={<IconStorage className="empty-ico" />}
+      />
+    );
 
   return (
     <div className="table-scroll">

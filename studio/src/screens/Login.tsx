@@ -92,10 +92,20 @@ export function Login({ onSignedIn }: { onSignedIn: (c: Credentials) => void }):
               remote backend, e.g. <code>https://data.example.tz/admin</code>.
             </p>
           </div>
-          <button type="submit" className="btn btn-primary" disabled={busy} style={{ width: '100%' }}>
-            {busy ? 'Verifying…' : 'Sign in'}
+          <button type="submit" className="btn btn-primary login-submit" disabled={busy}>
+            {busy ? (
+              <>
+                <span className="btn-spin" aria-hidden="true" /> Verifying…
+              </>
+            ) : (
+              'Connect to node'
+            )}
           </button>
         </form>
+
+        <p className="login-foot">
+          Laetoli Data · the sovereign self-hostable backend
+        </p>
       </div>
     </div>
   );

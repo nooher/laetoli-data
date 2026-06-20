@@ -1,0 +1,101 @@
+/* Daftari — clean, solid-fill UI (no gradients). Jewel-tone primary, calm paper
+   ground. Sized for phone-first; the layout centres on a single column. */
+:root {
+  --ink: #1b2426;
+  --muted: #5d6b6e;
+  --paper: #f4f1ea;
+  --card: #ffffff;
+  --line: #e3ddd1;
+  --jewel: #2e5e64;        /* Laetoli primary jewel */
+  --jewel-ink: #ffffff;
+  --danger: #9c3b2e;
+  --ok: #2e6e4f;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(27, 36, 38, 0.06), 0 8px 24px rgba(27, 36, 38, 0.05);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { max-width: 640px; margin: 0 auto; padding: 24px 16px 64px; }
+
+h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.02em; }
+p { margin: 6px 0; }
+.muted { color: var(--muted); }
+.hint { font-size: 13px; color: var(--muted); }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  margin: 14px 0;
+}
+
+/* auth */
+.auth { margin-top: 12vh; }
+
+/* fields */
+.field { display: block; margin: 12px 0; }
+.field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+input, textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+input:focus, textarea:focus { outline: 2px solid var(--jewel); outline-offset: 1px; }
+textarea { resize: vertical; }
+input[type="file"] { background: transparent; border: 1px dashed var(--line); padding: 8px; }
+
+/* buttons */
+.row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.btn {
+  font: inherit;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+.btn.primary { background: var(--jewel); color: var(--jewel-ink); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { background: transparent; color: var(--jewel); border-color: var(--line); }
+.btn.ghost:hover { background: var(--paper); }
+.btn.danger { background: transparent; color: var(--danger); border-color: var(--line); }
+.btn.danger:hover { background: #faf0ee; }
+
+/* shell */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 8px; }
+.brand { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
+.live { font-size: 12px; font-weight: 600; color: var(--ok); }
+.live.off { color: var(--muted); }
+.who { display: flex; align-items: center; gap: 12px; }
+
+/* notes */
+.list { margin-top: 8px; }
+.empty { text-align: center; padding: 28px 0; }
+.note .note-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.note .when { font-size: 12px; white-space: nowrap; }
+.note.done strong { text-decoration: line-through; color: var(--muted); }
+.thumb { display: block; max-width: 100%; border-radius: 10px; margin-top: 10px; border: 1px solid var(--line); }
+
+/* toast */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 999px;
+  font-size: 14px; box-shadow: var(--shadow); z-index: 50;
+}
+.toast-err { background: var(--danger); }

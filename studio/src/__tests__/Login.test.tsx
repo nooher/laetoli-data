@@ -15,13 +15,13 @@ describe('Login screen', () => {
   it('renders the admin-key field and shows it without a backend', () => {
     render(<Login onSignedIn={() => {}} />);
     expect(screen.getByLabelText(/admin key/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /connect to node/i })).toBeInTheDocument();
   });
 
   it('blocks empty key submission', async () => {
     const onSignedIn = vi.fn();
     render(<Login onSignedIn={onSignedIn} />);
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    fireEvent.click(screen.getByRole('button', { name: /connect to node/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/paste your admin key/i);
     expect(onSignedIn).not.toHaveBeenCalled();
   });
@@ -39,7 +39,7 @@ describe('Login screen', () => {
     const onSignedIn = vi.fn();
     render(<Login onSignedIn={onSignedIn} />);
     fireEvent.change(screen.getByLabelText(/admin key/i), { target: { value: 'svc-key' } });
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    fireEvent.click(screen.getByRole('button', { name: /connect to node/i }));
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith({ baseUrl: '/admin', key: 'svc-key' }));
     expect(sessionStorage.getItem('laetoli.studio.adminKey')).toBe('svc-key');
   });
@@ -51,7 +51,7 @@ describe('Login screen', () => {
     const onSignedIn = vi.fn();
     render(<Login onSignedIn={onSignedIn} />);
     fireEvent.change(screen.getByLabelText(/admin key/i), { target: { value: 'bad' } });
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    fireEvent.click(screen.getByRole('button', { name: /connect to node/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/rejected/i);
     expect(onSignedIn).not.toHaveBeenCalled();
   });

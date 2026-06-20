@@ -10,7 +10,7 @@ import {
   isNullish,
   toInputString,
 } from '../lib';
-import { Loading, ErrorBanner, OkBanner, Empty, Modal } from '../components/ui';
+import { Loading, TableSkeleton, ErrorBanner, Empty, Modal, Toast } from '../components/ui';
 import { IconPlus, IconEdit, IconTrash } from '../icons';
 
 const PAGE = 50;
@@ -168,10 +168,10 @@ function RowsPanel({
       </div>
 
       {error ? <ErrorBanner message={error} /> : null}
-      {ok ? <OkBanner message={ok} /> : null}
+      {ok ? <Toast message={ok} onClose={() => setOk(null)} /> : null}
 
       {loading ? (
-        <Loading label="Loading rows…" />
+        <TableSkeleton columns={columns.length + (editable ? 1 : 0)} label="Loading rows…" />
       ) : !data || data.rows.length === 0 ? (
         <Empty title="No rows" hint="This table is empty." />
       ) : (
@@ -182,8 +182,10 @@ function RowsPanel({
                 <tr>
                   {columns.map((c) => (
                     <th key={c.name}>
-                      {c.name}
-                      {c.is_pk ? ' 🔑' : ''}
+                      <span className="th-name">
+                        {c.name}
+                        {c.is_pk ? <span className="pill pill-pk th-pk">PK</span> : null}
+                      </span>
                       <span className="coltype">{c.type}</span>
                     </th>
                   ))}

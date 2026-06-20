@@ -1,7 +1,7 @@
 // Configuration loaded from environment. Fails fast on missing secrets.
 
-/** How a generated token (reset / email-verify) is delivered to the user. */
-export type DeliveryMode = 'log' | 'email';
+/** How a generated token (reset / email-verify / OTP) is delivered to the user. */
+export type DeliveryMode = 'log' | 'email' | 'sms';
 
 export interface AuthConfig {
   jwtSecret: string;
@@ -15,6 +15,26 @@ export interface AuthConfig {
   resetDelivery: DeliveryMode;
   emailDelivery: DeliveryMode;
   port: number;
+  // Public base URL used to build clickable reset / verify links in delivered
+  // messages. When unset, the raw token is sent instead. Prefer BASE_URL, else
+  // APP_URL, else the data URL the SDK already knows.
+  baseUrl?: string;
+  // SMTP (real email). When smtp.host is unset, the mailer degrades to 'log'.
+  smtp: {
+    host?: string;
+    port: number;
+    secure: boolean;
+    user?: string;
+    pass?: string;
+    from: string;
+  };
+  // NextSMS / messaging-service.co.tz (the operator's OWN account). When
+  // sms.apiToken is unset, the sender degrades to a no-op (log) — no lock-in.
+  sms: {
+    apiUrl: string;
+    apiToken?: string;
+    defaultSenderId: string;
+  };
   // Postgres connection: prefer DATABASE_URL, else POSTGRES_* parts.
   databaseUrl?: string;
   pg: {
@@ -65,9 +85,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig {
 
   function parseDelivery(raw: string | undefined): DeliveryMode {
     const v = (raw ?? 'log').trim().toLowerCase();
-    if (v === 'log' || v === 'email') return v;
+    if (v === 'log' || v === 'email' || v === 'sms') return v;
     throw new Error(
-      `FATAL: *_DELIVERY si sahihi ("${v}"). Tumia "log" au "email".`
+      `FATAL: *_DELIVERY si sahihi ("${v}"). Tumia "log", "email" au "sms".`
     );
   }
 
@@ -93,6 +113,31 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig {
 
   const port = Number.parseInt(env.AUTH_PORT ?? env.PORT ?? '9999', 10);
 
+  const baseUrl =
+    env.BASE_URL ?? env.APP_URL ?? env.LAETOLI_DATA_URL ?? undefined;
+
+  const smtpPort = Number.parseInt(env.SMTP_PORT ?? '587', 10);
+  const smtp = {
+    host: env.SMTP_HOST?.trim() || undefined,
+    port: Number.isFinite(smtpPort) && smtpPort > 0 ? smtpPort : 587,
+    // Default secure=true only on the implicit-TLS port 465; STARTTLS (587) is false.
+    secure: env.SMTP_SECURE
+      ? env.SMTP_SECURE.trim().toLowerCase() === 'true'
+      : smtpPort === 465,
+    user: env.SMTP_USER?.trim() || undefined,
+    pass: env.SMTP_PASS || undefined,
+    from: env.SMTP_FROM?.trim() || 'Laetoli Data <no-reply@laetoli.africa>',
+  };
+
+  const sms = {
+    apiUrl: (env.SMS_API_URL?.trim() || 'https://messaging-service.co.tz').replace(
+      /\/+$/,
+      ''
+    ),
+    apiToken: env.SMS_API_TOKEN?.trim() || undefined,
+    defaultSenderId: env.SMS_DEFAULT_SENDER_ID?.trim() || 'LAETOLI',
+  };
+
   return {
     jwtSecret,
     jwtExpiry,
@@ -102,6 +147,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig {
     resetDelivery,
     emailDelivery,
     port,
+    baseUrl,
+    smtp,
+    sms,
     databaseUrl: env.DATABASE_URL,
     pg: {
       host: env.POSTGRES_HOST ?? 'db',

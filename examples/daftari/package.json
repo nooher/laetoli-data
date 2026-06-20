@@ -1,0 +1,23 @@
+{
+  "name": "@laetoli/example-daftari",
+  "version": "0.1.0",
+  "description": "Daftari — the worked-example app for Laetoli Data. Auth + RLS + CRUD + storage + realtime on a sovereign node, using the @laetoli/data SDK.",
+  "license": "Apache-2.0",
+  "author": "Laetoli Ltd",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "seed": "node seed.mjs"
+  },
+  "dependencies": {
+    "@laetoli/data": "file:../../client"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^6.0.7"
+  }
+}

@@ -33,4 +33,29 @@ describe('loadConfig', () => {
       loadConfig({ JWT_SECRET: GOOD_SECRET, JWT_EXPIRY: '0' })
     ).toThrow(/JWT_EXPIRY/);
   });
+
+  it('accepts the new "sms" delivery mode + defaults to log', () => {
+    const c = loadConfig({ JWT_SECRET: GOOD_SECRET, RESET_DELIVERY: 'sms' });
+    expect(c.resetDelivery).toBe('sms');
+    expect(c.emailDelivery).toBe('log'); // default
+  });
+
+  it('rejects an unknown delivery mode', () => {
+    expect(() =>
+      loadConfig({ JWT_SECRET: GOOD_SECRET, EMAIL_DELIVERY: 'pigeon' })
+    ).toThrow(/DELIVERY/);
+  });
+
+  it('reads SMTP_* and SMS_* with sane defaults', () => {
+    const c = loadConfig({
+      JWT_SECRET: GOOD_SECRET,
+      SMTP_HOST: 'smtp.example.tz',
+      SMS_API_TOKEN: 'tok',
+    });
+    expect(c.smtp.host).toBe('smtp.example.tz');
+    expect(c.smtp.port).toBe(587);
+    expect(c.sms.apiUrl).toBe('https://messaging-service.co.tz');
+    expect(c.sms.defaultSenderId).toBe('LAETOLI');
+    expect(c.sms.apiToken).toBe('tok');
+  });
 });

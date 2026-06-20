@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
 import { AdminApi, ApiError } from '../api';
 import type { Stats } from '../types';
-import { Loading, ErrorBanner } from '../components/ui';
+import { ErrorBanner } from '../components/ui';
 
 export function Dashboard({ api }: { api: AdminApi }): JSX.Element {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -36,7 +36,19 @@ export function Dashboard({ api }: { api: AdminApi }): JSX.Element {
     };
   }, [api]);
 
-  if (loading) return <Loading label="Reading backend stats…" />;
+  if (loading) {
+    return (
+      <div className="tiles" aria-busy="true" aria-label="Reading backend stats…">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div className="tile skeleton" key={i}>
+            <span className="sk" style={{ width: '52%', height: 9 }} />
+            <span className="sk" style={{ width: '40%', height: 26, marginTop: 14 }} />
+            <span className="sk" style={{ width: '64%', height: 9, marginTop: 14 }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (error) return <ErrorBanner message={error} />;
 
   const tiles: { label: string; value: string; foot?: string }[] = [

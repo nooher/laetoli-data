@@ -3,6 +3,8 @@
 import { loadConfig } from './config.js';
 import { createPgDb } from './db.js';
 import { createApp } from './app.js';
+import { createMailer } from './mailer.js';
+import { createSmsSender } from './sms.js';
 
 function main(): void {
   let config;
@@ -15,6 +17,10 @@ function main(): void {
   }
 
   const db = createPgDb(config);
+  // Build the real senders from env. Both degrade gracefully (log + no-op) when
+  // unconfigured, so a half-set-up node still serves requests.
+  const mailer = createMailer(config);
+  const sms = createSmsSender(config);
   const app = createApp({
     db,
     jwtSecret: config.jwtSecret,
@@ -24,6 +30,9 @@ function main(): void {
     emailVerifyExpiry: config.emailVerifyExpiry,
     resetDelivery: config.resetDelivery,
     emailDelivery: config.emailDelivery,
+    baseUrl: config.baseUrl,
+    mailer,
+    sms,
   });
 
   const server = app.listen(config.port, () => {

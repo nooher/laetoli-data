@@ -42,7 +42,8 @@ client →│ /rest/* → PostgREST  /auth/* → Auth  /storage/* → Storage  /
 - `studio/` — the Admin Studio dashboard (Vite+React, served at `/studio/`)
 - `client/` — `@laetoli/data` SDK (+ tests)
 - `cli/` — `laetoli-data` CLI (init / up / migrate / backup / …)
-- `docs/` — `PITR.md`, `OBSERVABILITY.md` · `DEPLOY.md` · `RASPBERRY_PI.md`
+- `examples/` — **`daftari/`** the worked example (auth + RLS + CRUD + storage + realtime) · `poc.mjs` the smoke test
+- `docs/` — `EXAMPLE.md` · `RUNBOOK.md` · `PI_SETUP.md` · `ROTATION.md` · `PITR.md` · `OBSERVABILITY.md` · `STORAGE-TRANSFORMS.md` · `SEARCH.md` · `VECTORS.md` · `WEBHOOKS.md` · `SCHEDULER.md` (root: `DEPLOY.md` · `SECURITY.md` · `RASPBERRY_PI.md`)
 
 ## Quick start
 ```bash
@@ -72,6 +73,25 @@ await db.functions.invoke('hello', { body: { jina: 'Asha' } });
 
 Open the **Admin Studio** at `http://localhost:8088/studio/` and sign in with
 your `ADMIN_API_KEY` to browse tables, run SQL, and manage auth/storage/RLS.
+
+## Build a real app — the worked example
+**[`examples/daftari/`](examples/daftari/)** is a small, complete app
+(plain Vite + TypeScript, ~300 lines) that proves the whole model end to end on
+a node you own: **auth + RLS + CRUD + a private-bucket file upload with a signed
+URL + an owner-aware realtime subscription**, all through `@laetoli/data`. The
+companion book walks through this exact code. Start at its
+[README](examples/daftari/README.md) or the overview in
+[`docs/EXAMPLE.md`](docs/EXAMPLE.md). For a one-file smoke test, run
+`node examples/poc.mjs` against a live node.
+
+## Docs
+Operate, secure, and extend a node:
+- [`docs/EXAMPLE.md`](docs/EXAMPLE.md) — the **Daftari** worked example (this is where to start building)
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — day-2 operations: deploy, migrate, back up, restore, incident response
+- [`SECURITY.md`](SECURITY.md) — threat model, CORS lockdown, rate limiting, RLS audit, the service-role key
+- [`docs/ROTATION.md`](docs/ROTATION.md) — rotating `JWT_SECRET`, DB passwords, and the `ADMIN_API_KEY`
+- [`DEPLOY.md`](DEPLOY.md) — production VPS deploy · [`docs/PI_SETUP.md`](docs/PI_SETUP.md) + [`RASPBERRY_PI.md`](RASPBERRY_PI.md) — edge/Pi
+- [`docs/PITR.md`](docs/PITR.md) · [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) · [`docs/STORAGE-TRANSFORMS.md`](docs/STORAGE-TRANSFORMS.md) · [`docs/SEARCH.md`](docs/SEARCH.md) · [`docs/VECTORS.md`](docs/VECTORS.md) · [`docs/WEBHOOKS.md`](docs/WEBHOOKS.md) · [`docs/SCHEDULER.md`](docs/SCHEDULER.md)
 
 ## CLI (`laetoli-data`)
 | Command | Does |

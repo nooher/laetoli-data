@@ -50,6 +50,37 @@ function screenFromHash(): ScreenId {
   return found ? found.id : 'dashboard';
 }
 
+/** Friendly node label from a base URL: host for absolute, "same origin" for /admin. */
+function nodeLabel(baseUrl: string): string {
+  if (baseUrl.startsWith('/')) return 'This node';
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return baseUrl;
+  }
+}
+
+/** Live edge reachability, polled gently, so the shell always shows node status. */
+function useHealth(api: AdminApi | null): 'up' | 'down' | 'unknown' {
+  const [state, setState] = useState<'up' | 'down' | 'unknown'>('unknown');
+  useEffect(() => {
+    if (!api) return;
+    let active = true;
+    const ping = () =>
+      api.health().then(
+        () => active && setState('up'),
+        () => active && setState('down'),
+      );
+    ping();
+    const id = window.setInterval(ping, 20000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [api]);
+  return state;
+}
+
 export function App(): JSX.Element {
   const [creds, setCreds] = useState<Credentials | null>(loadCredentials);
   const [screen, setScreen] = useState<ScreenId>(screenFromHash);
@@ -61,6 +92,7 @@ export function App(): JSX.Element {
   }, []);
 
   const api = useMemo(() => (creds ? new AdminApi(creds) : null), [creds]);
+  const health = useHealth(api);
 
   if (!creds || !api) {
     return <Login onSignedIn={setCreds} />;
@@ -104,8 +136,26 @@ export function App(): JSX.Element {
           ))}
         </ul>
         <div className="nav-foot">
-          <div className="who" title={creds.baseUrl}>{creds.baseUrl}</div>
-          <button className="btn btn-ghost btn-sm" onClick={signOut} style={{ width: '100%', color: '#CBD8CC', borderColor: 'var(--line-dark)' }}>
+          <div className="node" title={creds.baseUrl}>
+            <span
+              className={`node-dot ${health === 'up' ? 'is-up' : health === 'down' ? 'is-down' : 'is-unknown'}`}
+              aria-hidden="true"
+            />
+            <div className="node-body">
+              <div className="node-name">{nodeLabel(creds.baseUrl)}</div>
+              <div className="node-state">
+                {health === 'up'
+                  ? 'Connected'
+                  : health === 'down'
+                    ? 'Unreachable'
+                    : 'Connecting…'}
+              </div>
+            </div>
+          </div>
+          <button
+            className="btn btn-ghost btn-sm nav-signout"
+            onClick={signOut}
+          >
             <IconSignOut className="nav-ico" /> Sign out
           </button>
         </div>
