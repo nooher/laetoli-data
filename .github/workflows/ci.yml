@@ -38,10 +38,10 @@ jobs:
           - client
           - studio
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -72,7 +72,7 @@ jobs:
     name: docker build smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Provide a .env (compose interpolates ${VAR})
         run: cp .env.example .env
@@ -95,7 +95,7 @@ jobs:
     needs: docker-build
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Generate a real .env with throwaway secrets
         run: |
