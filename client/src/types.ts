@@ -51,6 +51,19 @@ export interface Credentials {
   password: string;
 }
 
+/** Providers laetoli-data's auth service supports for signInWithOAuth(). */
+export type OAuthProvider = 'google';
+
+export interface OAuthResponse {
+  data: { provider: OAuthProvider; url: string } | null;
+  error: PostgrestError | null;
+}
+
+export interface OtpResponse {
+  data: Record<string, never>;
+  error: PostgrestError | null;
+}
+
 export interface ClientOptions {
   /**
    * Optional anon/public key. Sent as `apikey` header and as the default

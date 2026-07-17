@@ -9,11 +9,13 @@ export interface AuthConfig {
   refreshExpiry: number; // seconds — refresh-token lifetime
   resetExpiry: number; // seconds — password-reset token lifetime
   emailVerifyExpiry: number; // seconds — email-verification token lifetime
+  magicLinkExpiry: number; // seconds — email magic-link token lifetime
   // Delivery seams: 'log' (default, dev/offline) writes the token to the log and
   // returns it in the response; 'email' is the wiring point for a future
   // mailer/SMS sender (no external call is made by this service).
   resetDelivery: DeliveryMode;
   emailDelivery: DeliveryMode;
+  magicLinkDelivery: DeliveryMode;
   port: number;
   // Public base URL used to build clickable reset / verify links in delivered
   // messages. When unset, the raw token is sent instead. Prefer BASE_URL, else
@@ -35,6 +37,22 @@ export interface AuthConfig {
     apiToken?: string;
     defaultSenderId: string;
   };
+  // Google OAuth (signInWithOAuth({provider:'google'})). Unset clientId/Secret
+  // degrades /oauth/google/start to a clear 503, same "optional, no lock-in"
+  // pattern as SMTP/SMS above — the service still boots without them.
+  googleOAuth: {
+    clientId?: string;
+    clientSecret?: string;
+    /** Must exactly match a URI registered in the Google Cloud OAuth client. */
+    redirectUri?: string;
+  };
+  // After a successful OAuth login, the browser is redirected back to the
+  // app with tokens in the URL fragment. This allow-list (an anchored
+  // alternation regex, same shape as CORS_ALLOWED_ORIGINS_REGEXP) prevents
+  // an attacker from using the OAuth flow as an open redirect to steal
+  // tokens. Unset → no redirect_to is accepted (safe default, not permissive
+  // like CORS's unset-default, since this one can leak tokens).
+  oauthAllowedRedirectOriginsRegexp?: string;
   // Postgres connection: prefer DATABASE_URL, else POSTGRES_* parts.
   databaseUrl?: string;
   pg: {
@@ -107,9 +125,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig {
     60 * 60 * 24,
     'EMAIL_VERIFY_EXPIRY'
   );
+  const magicLinkExpiry = parsePositiveSeconds(
+    env.MAGICLINK_EXPIRY,
+    15 * 60,
+    'MAGICLINK_EXPIRY'
+  );
 
   const resetDelivery = parseDelivery(env.RESET_DELIVERY);
   const emailDelivery = parseDelivery(env.EMAIL_DELIVERY);
+  const magicLinkDelivery = parseDelivery(env.MAGICLINK_DELIVERY ?? env.EMAIL_DELIVERY);
 
   const port = Number.parseInt(env.AUTH_PORT ?? env.PORT ?? '9999', 10);
 
@@ -138,18 +162,28 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig {
     defaultSenderId: env.SMS_DEFAULT_SENDER_ID?.trim() || 'LAETOLI',
   };
 
+  const googleOAuth = {
+    clientId: env.GOOGLE_CLIENT_ID?.trim() || undefined,
+    clientSecret: env.GOOGLE_CLIENT_SECRET?.trim() || undefined,
+    redirectUri: env.GOOGLE_REDIRECT_URI?.trim() || undefined,
+  };
+
   return {
     jwtSecret,
     jwtExpiry,
     refreshExpiry,
     resetExpiry,
     emailVerifyExpiry,
+    magicLinkExpiry,
     resetDelivery,
     emailDelivery,
+    magicLinkDelivery,
     port,
     baseUrl,
     smtp,
     sms,
+    googleOAuth,
+    oauthAllowedRedirectOriginsRegexp: env.OAUTH_ALLOWED_REDIRECT_ORIGINS_REGEXP?.trim() || undefined,
     databaseUrl: env.DATABASE_URL,
     pg: {
       host: env.POSTGRES_HOST ?? 'db',

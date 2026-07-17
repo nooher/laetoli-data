@@ -58,6 +58,156 @@ describe('auth.signInAnonymously', () => {
   });
 });
 
+describe('auth.signInWithOAuth', () => {
+  it('outside a browser (no window): returns the start URL without redirecting, requires redirectTo', () => {
+    const { fn } = makeFetch();
+    const c = createClient(URL, { fetch: fn, storage: memoryStorage() });
+
+    const noRedirectTo = c.auth.signInWithOAuth({ provider: 'google' });
+    expect(noRedirectTo.error?.code).toBe('no_redirect_to');
+
+    const { data, error } = c.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: 'https://app.example.tz/callback' },
+    });
+    expect(error).toBeNull();
+    expect(data?.provider).toBe('google');
+    expect(data?.url).toBe(
+      `${URL}/auth/oauth/google/start?redirect_to=${encodeURIComponent('https://app.example.tz/callback')}`
+    );
+  });
+
+  it('in a browser: redirects window.location to the start URL by default', () => {
+    const { fn } = makeFetch();
+    const c = createClient(URL, { fetch: fn, storage: memoryStorage() });
+
+    const assign = vi.fn();
+    // @ts-expect-error — minimal window stub for this test only.
+    globalThis.window = { location: { assign, href: 'https://app.example.tz/page' } };
+    try {
+      const { data } = c.auth.signInWithOAuth({ provider: 'google' });
+      expect(assign).toHaveBeenCalledWith(data?.url);
+      expect(data?.url).toContain(encodeURIComponent('https://app.example.tz/page'));
+    } finally {
+      // @ts-expect-error — cleanup the stub.
+      delete globalThis.window;
+    }
+  });
+
+  it('skipBrowserRedirect: true returns the URL without navigating', () => {
+    const { fn } = makeFetch();
+    const c = createClient(URL, { fetch: fn, storage: memoryStorage() });
+
+    const assign = vi.fn();
+    // @ts-expect-error — minimal window stub for this test only.
+    globalThis.window = { location: { assign, href: 'https://app.example.tz/page' } };
+    try {
+      const { data } = c.auth.signInWithOAuth({
+        provider: 'google',
+        options: { skipBrowserRedirect: true },
+      });
+      expect(assign).not.toHaveBeenCalled();
+      expect(data?.url).toBeTruthy();
+    } finally {
+      // @ts-expect-error — cleanup the stub.
+      delete globalThis.window;
+    }
+  });
+});
+
+describe('auth.signInWithOtp', () => {
+  it('POSTs /auth/magiclink with email + redirect_to (defaulting to window.location.href)', async () => {
+    const { fn, calls } = makeFetch([{ status: 200, json: { message: 'ok' } }]);
+    const c = createClient(URL, { fetch: fn, storage: memoryStorage() });
+
+    // @ts-expect-error — minimal window stub for this test only.
+    globalThis.window = { location: { href: 'https://app.example.tz/page' } };
+    try {
+      const { data, error } = await c.auth.signInWithOtp({ email: 'asha@example.com' });
+      expect(error).toBeNull();
+      expect(data).toEqual({});
+      expect(calls[0].url).toBe(`${URL}/auth/magiclink`);
+      expect(calls[0].body).toEqual({
+        email: 'asha@example.com',
+        redirect_to: 'https://app.example.tz/page',
+      });
+    } finally {
+      // @ts-expect-error — cleanup the stub.
+      delete globalThis.window;
+    }
+  });
+
+  it('uses options.emailRedirectTo when given, and does not store a session (no token yet)', async () => {
+    const storage = memoryStorage();
+    const { fn, calls } = makeFetch([{ status: 200, json: { message: 'ok' } }]);
+    const c = createClient(URL, { fetch: fn, storage });
+
+    await c.auth.signInWithOtp({
+      email: 'asha@example.com',
+      options: { emailRedirectTo: 'https://app.example.tz/callback' },
+    });
+    expect(calls[0].body).toEqual({
+      email: 'asha@example.com',
+      redirect_to: 'https://app.example.tz/callback',
+    });
+    expect(storage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it('maps a failed request to an error envelope', async () => {
+    const { fn } = makeFetch([{ status: 400, json: { error: 'Barua pepe si sahihi.' } }]);
+    const c = createClient(URL, { fetch: fn, storage: memoryStorage() });
+
+    const { data, error } = await c.auth.signInWithOtp({ email: 'bad' });
+    expect(data).toEqual({});
+    expect(error?.message).toBe('Barua pepe si sahihi.');
+  });
+});
+
+describe('detectSessionInUrl (OAuth callback landing)', () => {
+  it('adopts #access_token=... from the URL on construction and cleans the fragment', () => {
+    const storage = memoryStorage();
+    const token = makeJwt({ sub: 'u3', role: 'authenticated' });
+    const replaceState = vi.fn();
+    // Cast (not @ts-expect-error): a multi-line stub object's "missing
+    // Location/History properties" errors attribute to the NESTED lines, past
+    // where a single directive on the assignment line could suppress them.
+    globalThis.window = {
+      location: {
+        hash: `#access_token=${token}&refresh_token=r1&token_type=bearer&expires_in=3600`,
+        pathname: '/callback',
+        search: '',
+      },
+      history: { replaceState },
+    } as unknown as Window & typeof globalThis;
+    try {
+      const { fn } = makeFetch();
+      const c = createClient(URL, { fetch: fn, storage });
+      expect(storage.getItem(STORAGE_KEY)).toBe(token);
+      expect(replaceState).toHaveBeenCalledWith(null, '', '/callback');
+      // Constructing the client itself does no network call.
+      expect(fn).not.toHaveBeenCalled();
+      void c;
+    } finally {
+      // @ts-expect-error — cleanup the stub.
+      delete globalThis.window;
+    }
+  });
+
+  it('is a no-op when there is no access_token in the hash', () => {
+    const storage = memoryStorage();
+    // @ts-expect-error — minimal window stub for this test only.
+    globalThis.window = { location: { hash: '#other=1', pathname: '/', search: '' } };
+    try {
+      const { fn } = makeFetch();
+      createClient(URL, { fetch: fn, storage });
+      expect(storage.getItem(STORAGE_KEY)).toBeNull();
+    } finally {
+      // @ts-expect-error — cleanup the stub.
+      delete globalThis.window;
+    }
+  });
+});
+
 describe('auth.getUser', () => {
   it('returns null user when not signed in (no request)', async () => {
     const { fn, calls } = makeFetch([]);

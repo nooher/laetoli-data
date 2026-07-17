@@ -21,6 +21,26 @@ function main(): void {
   // unconfigured, so a half-set-up node still serves requests.
   const mailer = createMailer(config);
   const sms = createSmsSender(config);
+  // Google OAuth: only wired when ALL three are set — a partial config (e.g.
+  // clientId without clientSecret) is treated the same as unset (503 on the
+  // route) rather than crashing the whole service at startup.
+  const googleOAuth =
+    config.googleOAuth.clientId && config.googleOAuth.clientSecret && config.googleOAuth.redirectUri
+      ? {
+          clientId: config.googleOAuth.clientId,
+          clientSecret: config.googleOAuth.clientSecret,
+          redirectUri: config.googleOAuth.redirectUri,
+        }
+      : undefined;
+  if (config.googleOAuth.clientId || config.googleOAuth.clientSecret) {
+    if (!googleOAuth) {
+      console.warn(
+        '[auth] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI must ALL be set for ' +
+          'Google OAuth — partial config detected, /oauth/google/* will 503 until all three are set.'
+      );
+    }
+  }
+
   const app = createApp({
     db,
     jwtSecret: config.jwtSecret,
@@ -30,9 +50,13 @@ function main(): void {
     emailVerifyExpiry: config.emailVerifyExpiry,
     resetDelivery: config.resetDelivery,
     emailDelivery: config.emailDelivery,
+    magicLinkExpiry: config.magicLinkExpiry,
+    magicLinkDelivery: config.magicLinkDelivery,
     baseUrl: config.baseUrl,
     mailer,
     sms,
+    googleOAuth,
+    oauthAllowedRedirectOriginsRegexp: config.oauthAllowedRedirectOriginsRegexp,
   });
 
   const server = app.listen(config.port, () => {

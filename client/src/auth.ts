@@ -3,6 +3,9 @@ import type {
   AuthStateChangeCallback,
   Credentials,
   LaetoliUser,
+  OAuthProvider,
+  OAuthResponse,
+  OtpResponse,
   PostgrestError,
   Session,
   TokenStorage,
@@ -26,6 +29,68 @@ export class AuthClient {
 
   constructor(private readonly ctx: AuthCtx) {
     this.currentToken = ctx.storage.getItem(ctx.storageKey);
+    this.detectSessionInUrl();
+  }
+
+  /**
+   * Redirect the browser to sign in via an external provider — matches
+   * supabase-js's signInWithOAuth({provider}) shape/behavior closely enough
+   * that a client already built against it needs minimal changes: build the
+   * provider's start URL and (unless `skipBrowserRedirect`) navigate there.
+   * After the provider + auth-service round trip, the browser lands back on
+   * `options.redirectTo` (default: the current page) with
+   * `#access_token=...&refresh_token=...` in the URL — picked up
+   * automatically by `detectSessionInUrl()` on the next page load.
+   */
+  signInWithOAuth(input: {
+    provider: OAuthProvider;
+    options?: { redirectTo?: string; skipBrowserRedirect?: boolean };
+  }): OAuthResponse {
+    const redirectTo =
+      input.options?.redirectTo ??
+      (typeof window !== 'undefined' ? window.location.href : undefined);
+    if (!redirectTo) {
+      return {
+        data: null,
+        error: { message: 'redirectTo is required outside a browser context.', code: 'no_redirect_to' },
+      };
+    }
+    const url = `${this.ctx.authUrl}/oauth/${input.provider}/start?redirect_to=${encodeURIComponent(redirectTo)}`;
+    if (!input.options?.skipBrowserRedirect && typeof window !== 'undefined') {
+      window.location.assign(url);
+    }
+    return { data: { provider: input.provider, url }, error: null };
+  }
+
+  /**
+   * Passwordless email sign-in: emails a single-use "magic link". Clicking it
+   * lands the browser on `options.emailRedirectTo` (default: the current
+   * page) with `#access_token=...` in the URL — picked up automatically by
+   * `detectSessionInUrl()`, same as the OAuth callback. Matches
+   * supabase-js's `signInWithOtp({ email })` shape/behavior.
+   */
+  async signInWithOtp(input: {
+    email: string;
+    options?: { emailRedirectTo?: string };
+  }): Promise<OtpResponse> {
+    const redirectTo =
+      input.options?.emailRedirectTo ??
+      (typeof window !== 'undefined' ? window.location.href : undefined);
+    let res: Response;
+    try {
+      res = await this.ctx.fetch(`${this.ctx.authUrl}/magiclink`, {
+        method: 'POST',
+        headers: { ...this.ctx.baseHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: input.email, redirect_to: redirectTo }),
+      });
+    } catch (e) {
+      return { data: {}, error: { message: msg(e), code: 'fetch_error' } };
+    }
+    const parsed = await safeJson(res);
+    if (!res.ok) {
+      return { data: {}, error: toErr(parsed, res) };
+    }
+    return { data: {}, error: null };
   }
 
   /** The persisted access token, if signed in. Used by the REST layer. */
@@ -112,6 +177,31 @@ export class AuthClient {
   }
 
   // ---- internals ---------------------------------------------------------
+
+  /**
+   * On construction, check window.location.hash for `access_token=...`
+   * (what the OAuth callback redirect leaves behind) and, if present, adopt
+   * it as the session and strip it from the visible URL. Matches
+   * supabase-js's default `detectSessionInUrl: true` behavior. A no-op
+   * outside a browser (SSR, Node, tests without a `window`).
+   */
+  private detectSessionInUrl(): void {
+    if (typeof window === 'undefined' || !window.location?.hash) return;
+    const hash = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const params = new URLSearchParams(hash);
+    const token = params.get('access_token');
+    if (!token) return;
+
+    this.setSession(token, 'SIGNED_IN');
+
+    // Clean the fragment off the visible URL, same as supabase-js.
+    if (typeof window.history?.replaceState === 'function') {
+      const clean = window.location.pathname + window.location.search;
+      window.history.replaceState(null, '', clean);
+    }
+  }
 
   private async post(
     path: string,

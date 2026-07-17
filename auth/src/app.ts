@@ -14,10 +14,20 @@ import {
   handlePasswordReset,
   handleEmailVerifyRequest,
   handleEmailVerifyConfirm,
+  handleMagicLinkRequest,
+  handleMagicLinkVerify,
   handleOtpRequest,
   handleOtpVerify,
+  handleMfaEnroll,
+  handleMfaListFactors,
+  handleMfaChallenge,
+  handleMfaVerify,
+  handleMfaUnenroll,
+  handleOAuthGoogleStart,
+  handleOAuthGoogleCallback,
   type HandlerDeps,
 } from './handlers.js';
+import type { GoogleOAuthConfig } from './oauth.js';
 import { createRateLimiter, type RateLimiter } from './ratelimit.js';
 import { Registry } from './metrics.js';
 import type { DeliveryMode } from './config.js';
@@ -33,7 +43,11 @@ export interface AppDeps {
   emailVerifyExpiry?: number;
   resetDelivery?: DeliveryMode;
   emailDelivery?: DeliveryMode;
-  /** Public base URL for reset/verify links (raw token when unset). */
+  /** Magic-link-token lifetime in seconds. */
+  magicLinkExpiry?: number;
+  /** Magic-link delivery mode ('log' default). */
+  magicLinkDelivery?: DeliveryMode;
+  /** Public base URL for reset/verify/magic-link links (raw token when unset). */
   baseUrl?: string;
   /** Real SMTP mailer (injectable; built from env in server.ts). */
   mailer?: Mailer;
@@ -47,6 +61,14 @@ export interface AppDeps {
   limiter?: RateLimiter;
   /** Optional shared metrics registry (defaults to a fresh one). */
   registry?: Registry;
+  /** MFA challenge lifetime in seconds. */
+  mfaChallengeExpiry?: number;
+  /** Google OAuth client config — unset means /oauth/google/* return a clear 503. */
+  googleOAuth?: GoogleOAuthConfig;
+  /** Allow-list regexp for post-OAuth-login redirect targets. */
+  oauthAllowedRedirectOriginsRegexp?: string;
+  /** Injectable fetch for the Google token exchange (tests only; defaults to global fetch). */
+  oauthFetch?: typeof fetch;
 }
 
 function clientKey(req: Request): string {
@@ -68,6 +90,8 @@ function routeLabel(path: string): string {
     '/password/reset',
     '/email/verify/request',
     '/email/verify/confirm',
+    '/magiclink',
+    '/magiclink/verify',
     '/otp/request',
     '/otp/verify',
   ];
@@ -132,11 +156,17 @@ export function createApp(deps: AppDeps): Express {
     emailVerifyExpiry: deps.emailVerifyExpiry,
     resetDelivery: deps.resetDelivery,
     emailDelivery: deps.emailDelivery,
+    magicLinkExpiry: deps.magicLinkExpiry,
+    magicLinkDelivery: deps.magicLinkDelivery,
     baseUrl: deps.baseUrl,
     mailer: deps.mailer,
     sms: deps.sms,
     otpExpiry: deps.otpExpiry,
     otpMaxAttempts: deps.otpMaxAttempts,
+    mfaChallengeExpiry: deps.mfaChallengeExpiry,
+    googleOAuth: deps.googleOAuth,
+    oauthAllowedRedirectOriginsRegexp: deps.oauthAllowedRedirectOriginsRegexp,
+    oauthFetch: deps.oauthFetch,
   };
 
   const ua = (req: Request): string | null => req.header('user-agent') ?? null;
@@ -155,8 +185,8 @@ export function createApp(deps: AppDeps): Express {
     return true;
   };
 
-  const send = (res: Response, r: { status: number; body: unknown }) =>
-    res.status(r.status).json(r.body);
+  const send = (res: Response, r: { status: number; body: unknown; redirect?: string }) =>
+    r.redirect ? res.redirect(r.status, r.redirect) : res.status(r.status).json(r.body);
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'laetoli-auth' });
@@ -260,6 +290,28 @@ export function createApp(deps: AppDeps): Express {
     }
   });
 
+  // Email magic-link: request a single-use sign-in link (sovereign passwordless
+  // login), matching Supabase's signInWithOtp({email}) UX.
+  app.post('/magiclink', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleMagicLinkRequest(handlerDeps, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Email magic-link: consume the link → redirect with tokens in the URL
+  // fragment (with redirect_to) or return the session directly as JSON.
+  app.get('/magiclink/verify', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleMagicLinkVerify(handlerDeps, req.query, ua(req)));
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // Phone-OTP: request a 6-digit code by SMS (sovereign passwordless login).
   app.post('/otp/request', async (req, res, next) => {
     if (!guard(req, res)) return;
@@ -275,6 +327,82 @@ export function createApp(deps: AppDeps): Express {
     if (!guard(req, res)) return;
     try {
       send(res, await handleOtpVerify(handlerDeps, req.body ?? {}, ua(req)));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // MFA (TOTP) — self-service authenticator-app enrollment. Mirrors the
+  // Supabase auth.mfa.* REST shape (factors/challenge/verify) so a client
+  // already built against it needs minimal changes to target this service.
+  app.post('/factors', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleMfaEnroll(handlerDeps, req.header('authorization'), req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.get('/factors', async (req, res, next) => {
+    try {
+      send(res, await handleMfaListFactors(handlerDeps, req.header('authorization')));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.post('/factors/:id/challenge', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(
+        res,
+        await handleMfaChallenge(handlerDeps, req.header('authorization'), req.params.id)
+      );
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.post('/factors/:id/verify', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(
+        res,
+        await handleMfaVerify(handlerDeps, req.header('authorization'), req.params.id, req.body ?? {})
+      );
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.delete('/factors/:id', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(
+        res,
+        await handleMfaUnenroll(handlerDeps, req.header('authorization'), req.params.id)
+      );
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Google OAuth — redirects the browser to Google, then back to the app with
+  // tokens in the URL fragment, matching Supabase's own signInWithOAuth UX.
+  app.get('/oauth/google/start', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleOAuthGoogleStart(handlerDeps, req.query.redirect_to));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.get('/oauth/google/callback', async (req, res, next) => {
+    if (!guard(req, res)) return;
+    try {
+      send(res, await handleOAuthGoogleCallback(handlerDeps, req.query, ua(req)));
     } catch (e) {
       next(e);
     }

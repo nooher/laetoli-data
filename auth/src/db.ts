@@ -14,6 +14,8 @@ export interface UserRow {
   email_verified: boolean;
   phone: string | null;
   created_at: string;
+  /** NULL = active. Set by an admin (admin service) to block new logins. */
+  suspended_at: string | null;
 }
 
 /** Public user shape (NEVER includes password_hash). */
@@ -71,6 +73,37 @@ export interface OtpCodeRow {
   created_at: string;
 }
 
+/** An enrolled (or pending) TOTP factor row. secret_enc is AES-256-GCM ciphertext. */
+export interface MfaFactorRow {
+  id: string;
+  user_id: string;
+  factor_type: 'totp';
+  status: 'unverified' | 'verified';
+  secret_enc: string;
+  friendly_name: string | null;
+  created_at: string;
+  verified_at: string | null;
+}
+
+/** A short-lived enroll/challenge/verify handshake row. */
+export interface MfaChallengeRow {
+  id: string;
+  factor_id: string;
+  expires_at: string;
+  verified_at: string | null;
+  created_at: string;
+}
+
+/** A linked external OAuth identity (currently: Google only). */
+export interface OAuthIdentityRow {
+  id: string;
+  user_id: string;
+  provider: 'google';
+  provider_user_id: string;
+  email: string | null;
+  created_at: string;
+}
+
 /**
  * The dependency-injection seam: a tiny data interface the handlers use.
  * Implemented for real by `createPgDb`, and faked in tests.
@@ -88,6 +121,8 @@ export interface Db {
   createAnonymousUser(): Promise<UserRow>;
   /** Create (or fetch) a phone-only user for SMS-OTP login. */
   createPhoneUser(phone: string): Promise<UserRow>;
+  /** Create (or fetch) an email-only user for magic-link login. */
+  createEmailUser(email: string): Promise<UserRow>;
   /** Set a new bcrypt hash for a user (password reset). */
   updatePasswordHash(userId: string, passwordHash: string): Promise<void>;
   /** Set the user's email + mark verified (email-verify confirm). */
@@ -139,6 +174,42 @@ export interface Db {
   incrementOtpAttempts(id: string): Promise<void>;
   markOtpUsed(id: string): Promise<void>;
 
+  // ---- email magic-link tokens (single-use, hashed) -----------------------
+  createMagicLinkToken(input: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: string;
+  }): Promise<SingleUseTokenRow>;
+  findMagicLinkTokenByHash(tokenHash: string): Promise<SingleUseTokenRow | null>;
+  markMagicLinkTokenUsed(id: string): Promise<void>;
+
+  // ---- MFA (TOTP) factors + challenges -----------------------------------
+  createMfaFactor(input: {
+    userId: string;
+    secretEnc: string;
+    friendlyName?: string | null;
+  }): Promise<MfaFactorRow>;
+  findMfaFactorById(id: string): Promise<MfaFactorRow | null>;
+  /** All factors for a user, newest first (listFactors). */
+  findMfaFactorsByUser(userId: string): Promise<MfaFactorRow[]>;
+  markMfaFactorVerified(id: string): Promise<void>;
+  deleteMfaFactor(id: string): Promise<void>;
+
+  createMfaChallenge(input: { factorId: string; expiresAt: string }): Promise<MfaChallengeRow>;
+  findMfaChallengeById(id: string): Promise<MfaChallengeRow | null>;
+  markMfaChallengeVerified(id: string): Promise<void>;
+
+  // ---- OAuth (Google) -----------------------------------------------------
+  /** Create a passwordless user for a first-time OAuth sign-in. */
+  createOAuthUser(input: { email?: string | null; emailVerified: boolean }): Promise<UserRow>;
+  findOAuthIdentity(provider: 'google', providerUserId: string): Promise<OAuthIdentityRow | null>;
+  createOAuthIdentity(input: {
+    userId: string;
+    provider: 'google';
+    providerUserId: string;
+    email?: string | null;
+  }): Promise<OAuthIdentityRow>;
+
   /** Liveness check for /health. */
   ping(): Promise<void>;
   close(): Promise<void>;
@@ -157,13 +228,17 @@ export function createPgDb(config: AuthConfig): Db {
       });
 
   const SELECT_COLS =
-    'id, username, password_hash, is_anonymous, email, email_verified, phone, created_at';
+    'id, username, password_hash, is_anonymous, email, email_verified, phone, created_at, suspended_at';
   const REFRESH_COLS =
     'id, user_id, token_hash, family_id, expires_at, revoked_at, created_at, user_agent';
   const SINGLE_USE_COLS =
     'id, user_id, token_hash, expires_at, used_at, created_at';
   const OTP_COLS =
     'id, user_id, phone, code_hash, expires_at, attempts, used_at, created_at';
+  const MFA_FACTOR_COLS =
+    'id, user_id, factor_type, status, secret_enc, friendly_name, created_at, verified_at';
+  const MFA_CHALLENGE_COLS = 'id, factor_id, expires_at, verified_at, created_at';
+  const OAUTH_IDENTITY_COLS = 'id, user_id, provider, provider_user_id, email, created_at';
 
   return {
     async findByUsername(username) {
@@ -226,6 +301,18 @@ export function createPgDb(config: AuthConfig): Db {
          ON CONFLICT (phone) WHERE phone IS NOT NULL DO UPDATE SET phone = EXCLUDED.phone
          RETURNING ${SELECT_COLS}`,
         [phone]
+      );
+      return rows[0];
+    },
+
+    async createEmailUser(email) {
+      // Upsert-ish: a concurrent request may have just created this email user.
+      const { rows } = await pool.query<UserRow>(
+        `INSERT INTO auth.users (email, is_anonymous)
+         VALUES ($1, false)
+         ON CONFLICT (email) WHERE email IS NOT NULL DO UPDATE SET email = EXCLUDED.email
+         RETURNING ${SELECT_COLS}`,
+        [email]
       );
       return rows[0];
     },
@@ -379,6 +466,130 @@ export function createPgDb(config: AuthConfig): Db {
          WHERE id = $1 AND used_at IS NULL`,
         [id]
       );
+    },
+
+    // ---- email magic-link tokens --------------------------------------------
+    async createMagicLinkToken({ userId, tokenHash, expiresAt }) {
+      const { rows } = await pool.query<SingleUseTokenRow>(
+        `INSERT INTO auth.magic_link_tokens (user_id, token_hash, expires_at)
+         VALUES ($1, $2, $3)
+         RETURNING ${SINGLE_USE_COLS}`,
+        [userId, tokenHash, expiresAt]
+      );
+      return rows[0];
+    },
+
+    async findMagicLinkTokenByHash(tokenHash) {
+      const { rows } = await pool.query<SingleUseTokenRow>(
+        `SELECT ${SINGLE_USE_COLS} FROM auth.magic_link_tokens
+         WHERE token_hash = $1 LIMIT 1`,
+        [tokenHash]
+      );
+      return rows[0] ?? null;
+    },
+
+    async markMagicLinkTokenUsed(id) {
+      await pool.query(
+        `UPDATE auth.magic_link_tokens SET used_at = now()
+         WHERE id = $1 AND used_at IS NULL`,
+        [id]
+      );
+    },
+
+    // ---- MFA (TOTP) factors + challenges -----------------------------------
+    async createMfaFactor({ userId, secretEnc, friendlyName }) {
+      const { rows } = await pool.query<MfaFactorRow>(
+        `INSERT INTO auth.mfa_factors (user_id, secret_enc, friendly_name)
+         VALUES ($1, $2, $3)
+         RETURNING ${MFA_FACTOR_COLS}`,
+        [userId, secretEnc, friendlyName ?? null]
+      );
+      return rows[0];
+    },
+
+    async findMfaFactorById(id) {
+      const { rows } = await pool.query<MfaFactorRow>(
+        `SELECT ${MFA_FACTOR_COLS} FROM auth.mfa_factors WHERE id = $1 LIMIT 1`,
+        [id]
+      );
+      return rows[0] ?? null;
+    },
+
+    async findMfaFactorsByUser(userId) {
+      const { rows } = await pool.query<MfaFactorRow>(
+        `SELECT ${MFA_FACTOR_COLS} FROM auth.mfa_factors
+         WHERE user_id = $1 ORDER BY created_at DESC`,
+        [userId]
+      );
+      return rows;
+    },
+
+    async markMfaFactorVerified(id) {
+      await pool.query(
+        `UPDATE auth.mfa_factors SET status = 'verified', verified_at = now()
+         WHERE id = $1 AND status = 'unverified'`,
+        [id]
+      );
+    },
+
+    async deleteMfaFactor(id) {
+      await pool.query(`DELETE FROM auth.mfa_factors WHERE id = $1`, [id]);
+    },
+
+    async createMfaChallenge({ factorId, expiresAt }) {
+      const { rows } = await pool.query<MfaChallengeRow>(
+        `INSERT INTO auth.mfa_challenges (factor_id, expires_at)
+         VALUES ($1, $2)
+         RETURNING ${MFA_CHALLENGE_COLS}`,
+        [factorId, expiresAt]
+      );
+      return rows[0];
+    },
+
+    async findMfaChallengeById(id) {
+      const { rows } = await pool.query<MfaChallengeRow>(
+        `SELECT ${MFA_CHALLENGE_COLS} FROM auth.mfa_challenges WHERE id = $1 LIMIT 1`,
+        [id]
+      );
+      return rows[0] ?? null;
+    },
+
+    async markMfaChallengeVerified(id) {
+      await pool.query(
+        `UPDATE auth.mfa_challenges SET verified_at = now()
+         WHERE id = $1 AND verified_at IS NULL`,
+        [id]
+      );
+    },
+
+    // ---- OAuth (Google) -----------------------------------------------------
+    async createOAuthUser({ email, emailVerified }) {
+      const { rows } = await pool.query<UserRow>(
+        `INSERT INTO auth.users (username, password_hash, is_anonymous, email, email_verified)
+         VALUES (NULL, NULL, false, $1, $2)
+         RETURNING ${SELECT_COLS}`,
+        [email ?? null, emailVerified]
+      );
+      return rows[0];
+    },
+
+    async findOAuthIdentity(provider, providerUserId) {
+      const { rows } = await pool.query<OAuthIdentityRow>(
+        `SELECT ${OAUTH_IDENTITY_COLS} FROM auth.oauth_identities
+         WHERE provider = $1 AND provider_user_id = $2 LIMIT 1`,
+        [provider, providerUserId]
+      );
+      return rows[0] ?? null;
+    },
+
+    async createOAuthIdentity({ userId, provider, providerUserId, email }) {
+      const { rows } = await pool.query<OAuthIdentityRow>(
+        `INSERT INTO auth.oauth_identities (user_id, provider, provider_user_id, email)
+         VALUES ($1, $2, $3, $4)
+         RETURNING ${OAUTH_IDENTITY_COLS}`,
+        [userId, provider, providerUserId, email ?? null]
+      );
+      return rows[0];
     },
 
     async ping() {

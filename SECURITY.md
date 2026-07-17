@@ -12,10 +12,10 @@ We aim to acknowledge within 72 hours.
 
 ## Trust & identity model
 
-- **Users** authenticate via the auth service (username + password, or anonymous)
-  and receive an **HS256 JWT** signed with the shared `JWT_SECRET`, carrying
-  `{ sub, role: 'authenticated', exp }`. PostgREST and every service verify it
-  with the same secret.
+- **Users** authenticate via the auth service — username + password, anonymous,
+  email magic-link, phone-OTP, or Google OAuth — and receive an **HS256 JWT**
+  signed with the shared `JWT_SECRET`, carrying `{ sub, role: 'authenticated',
+  exp }`. PostgREST and every service verify it with the same secret.
 - **Row-Level Security** in PostgreSQL is the real gatekeeper: policies key off
   `auth.uid()` (the JWT `sub`) and the `role` claim — the same model as Supabase,
   so existing RLS migrations port directly. The request roles (`anon`,
@@ -77,7 +77,19 @@ We aim to acknowledge within 72 hours.
   not bundle the `rate_limit` handler, so the edge limiter is OFF until you
   build a Caddy with it (see **Rate limiting**). The auth service's app-level
   limiter is always on as the floor.
-- **Identity is username + password** (no email verification / OAuth / OTP yet).
+- **Only Google is wired for OAuth.** `signInWithOAuth({provider:'google'})`
+  works (see **OAuth** below); other providers (Apple, GitHub, …) aren't
+  built. Identity overall: username+password, email magic-link, phone-OTP,
+  Google OAuth, and TOTP as a second factor (see **MFA**).
+- **MFA is enrollment/management only, not yet enforced at login.** A verified
+  TOTP factor doesn't currently gate `/token` — see **MFA** below for the exact
+  scope and what step-up enforcement would still need.
+- **Account suspension blocks new logins, not already-issued access tokens.**
+  `POST /users/:id/suspend` (admin service) sets `auth.users.suspended_at` and
+  auto-revokes existing refresh-token sessions, but an access token issued
+  before the suspend still works until its own (short) `exp` — the same
+  property every other revocation in this service has. See
+  `docs/ADMIN_USER_OPS.md`.
 
 ## CORS
 
@@ -130,6 +142,30 @@ Two layers, defence in depth:
 
    Point the `caddy` service at it (`build: { dockerfile: Dockerfile.caddy }`),
    then uncomment the `rate_limit` block in the `Caddyfile`.
+
+## MFA (TOTP)
+
+Self-service authenticator-app (Google Authenticator, Authy, 1Password, etc.)
+enrollment — `POST /factors`, `GET /factors`, `POST /factors/:id/challenge`,
+`POST /factors/:id/verify`, `DELETE /factors/:id` — matching the Supabase
+`auth.mfa.*` REST shape so an app already built against it needs minimal
+changes to target Laetoli Data instead. Live-verified end-to-end against a
+real running instance (real Postgres row, real QR code, real computed TOTP
+code accepted) on 2026-07-17, not just unit-tested.
+
+- **Secrets are encrypted at rest** (AES-256-GCM, key derived from
+  `JWT_SECRET`), never one-way hashed like passwords — verifying a TOTP code
+  requires recomputing it from the secret on every check, so hashing isn't an
+  option here. Never exposed through PostgREST; only the auth service's own
+  REST endpoints touch `auth.mfa_factors`/`auth.mfa_challenges`.
+- **Scope, stated plainly:** this is enrollment and factor management — "turn
+  2FA on/off for my account." It does **not** yet enforce a second factor at
+  **login time**. Supabase's own model uses an AAL1/AAL2 (Authenticator
+  Assurance Level) step-up: a password login with a verified factor present
+  issues a lower-trust session until the TOTP challenge also passes. Building
+  that step-up is real, separate work — intentionally not bundled into this
+  pass rather than half-built. Track it before treating MFA as actually
+  enforced, not just available.
 
 ## RLS audit
 

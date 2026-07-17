@@ -37,6 +37,44 @@ describe('HTTP routes (supertest, fake Db)', () => {
     expect(me.body.user.username).toBe('neema');
   });
 
+  it('full flow: enroll → challenge → verify TOTP over real HTTP routing', async () => {
+    const a = app();
+    const signup = await request(a)
+      .post('/signup')
+      .send({ username: 'faraja', password: 'siri1234' });
+    const token = signup.body.access_token;
+    const auth = `Bearer ${token}`;
+
+    const enroll = await request(a).post('/factors').set('Authorization', auth).send({});
+    expect(enroll.status).toBe(200);
+    expect(enroll.body.totp.secret).toMatch(/^[A-Z2-7]+$/);
+
+    const { totp, base32Decode } = await import('../totp.js');
+    const code = totp(base32Decode(enroll.body.totp.secret));
+
+    const challenge = await request(a)
+      .post(`/factors/${enroll.body.id}/challenge`)
+      .set('Authorization', auth)
+      .send();
+    expect(challenge.status).toBe(200);
+
+    const verify = await request(a)
+      .post(`/factors/${enroll.body.id}/verify`)
+      .set('Authorization', auth)
+      .send({ challenge_id: challenge.body.id, code });
+    expect(verify.status).toBe(200);
+    expect(verify.body.status).toBe('verified');
+
+    const list = await request(a).get('/factors').set('Authorization', auth);
+    expect(list.body.totp).toHaveLength(1);
+    expect(list.body.totp[0].status).toBe('verified');
+
+    const del = await request(a)
+      .delete(`/factors/${enroll.body.id}`)
+      .set('Authorization', auth);
+    expect(del.status).toBe(200);
+  });
+
   it('POST /token bad creds → 401', async () => {
     const a = app();
     await request(a).post('/signup').send({ username: 'x9', password: 'siri1234' });
