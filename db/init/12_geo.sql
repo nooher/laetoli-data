@@ -1,0 +1,11 @@
+-- =============================================================================
+-- 12_geo.sql — PostGIS geo/location queries on a FRESH boot.
+-- -----------------------------------------------------------------------------
+-- Single source of truth: includes the canonical migration. Existing databases
+-- get the same SQL via `laetoli-data migrate` (0012_postgis.sql).
+--
+-- REQUIRES the `postgis` extension — build the db image from ./db/Dockerfile
+-- (pgvector/pgvector:pg16 + postgresql-16-postgis-3). On the stock
+-- pgvector/pgvector:pg16 image this fails. See docs/GEO.md.
+-- =============================================================================
+\i /migrations/0012_postgis.sql

@@ -65,8 +65,10 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Validate the compose file and build every service image (auth, storage,
-  # realtime, admin, functions, backup, studio all have Dockerfiles; db/rest/
-  # caddy are pulled images). docker compose build covers them all in one shot.
+  # realtime, admin, functions, backup, studio, and now db all have
+  # Dockerfiles — db/Dockerfile layers PostGIS onto pgvector/pgvector:pg16,
+  # see docs/GEO.md; rest/caddy are pulled images). docker compose build
+  # covers them all in one shot.
   # ---------------------------------------------------------------------------
   docker-build:
     name: docker build smoke

@@ -3,9 +3,10 @@
 # -----------------------------------------------------------------------------
 # Services (all images are multi-arch incl. linux/arm64 -> run on a Pi 4/5):
 #
-#   db      PostgreSQL 16. The database. On FIRST boot it runs every file in
-#           ./db/init (mounted into /docker-entrypoint-initdb.d) IN ORDER:
-#           00_passwords.sh, 01_roles.sql, 02_auth.sql, 03_example.sql.
+#   db      PostgreSQL 16 + pgvector + PostGIS (built from ./db/Dockerfile —
+#           see docs/GEO.md). On FIRST boot it runs every file in ./db/init
+#           (mounted into /docker-entrypoint-initdb.d) IN ORDER: 00_passwords.sh,
+#           01_roles.sql, 02_auth.sql, 03_example.sql, ... 12_geo.sql.
 #           Data persists in the named volume `pgdata`. Healthcheck: pg_isready.
 #
 #   rest    PostgREST. Auto REST API over Postgres. Connects AS `authenticator`,
@@ -28,9 +29,13 @@ name: laetoli-data
 
 services:
   db:
-    # pgvector/pgvector:pg16 is a drop-in superset of Postgres 16 with the
-    # `vector` extension (AI-native vector search). Multi-arch incl. arm64 (Pi).
-    image: pgvector/pgvector:pg16
+    # Built from ./db/Dockerfile: pgvector/pgvector:pg16 (drop-in Postgres 16
+    # superset, AI-native vector search) plus PostGIS layered on top (geo/
+    # location queries). Multi-arch incl. arm64 (Pi) — see docs/GEO.md.
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    image: laetoli-data-db:pg16-postgis
     restart: unless-stopped
     env_file: .env
     environment:
