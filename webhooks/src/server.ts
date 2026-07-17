@@ -16,6 +16,13 @@ import { parseNotification } from './core.js';
 import { createPgListener, type NotificationSource } from './listener.js';
 import { createPgStore, type Store } from './db.js';
 import { Dispatcher, type FetchLike, type DeliverySnapshot } from './dispatcher.js';
+import { createPgNetQueueStore, type NetQueueStore } from './netQueue.js';
+import { NetBridge } from './netBridge.js';
+
+/** Dedicated channel for the pg_net compatibility queue — see 0017_supabase_compat_pg_net.sql.
+ *  Kept separate from the realtime/webhooks NOTIFY stream even though the same
+ *  worker process listens to both; it's a distinct concern. */
+const NET_QUEUE_CHANNEL = 'laetoli_net_queue';
 
 export interface ServerDeps {
   config: WebhooksConfig;
@@ -23,6 +30,9 @@ export interface ServerDeps {
   listener?: NotificationSource;
   store?: Store;
   fetch?: FetchLike;
+  /** pg_net-bridge listener + store — separate from the webhooks ones above. */
+  netListener?: NotificationSource;
+  netStore?: NetQueueStore;
 }
 
 export interface WebhooksServer {
@@ -30,6 +40,9 @@ export interface WebhooksServer {
   listener: NotificationSource;
   store: Store;
   dispatcher: Dispatcher;
+  netListener: NotificationSource;
+  netStore: NetQueueStore;
+  netBridge: NetBridge;
   listen(): Promise<void>;
   close(): Promise<void>;
 }
@@ -45,6 +58,18 @@ export function createServer(deps: ServerDeps): WebhooksServer {
   const store = deps.store ?? createPgStore(config);
   const fetchImpl: FetchLike =
     deps.fetch ?? ((url, init) => fetch(url, init) as unknown as ReturnType<FetchLike>);
+
+  const netListener =
+    deps.netListener ?? createPgListener({ ...config, channel: NET_QUEUE_CHANNEL });
+  const netStore = deps.netStore ?? createPgNetQueueStore(config);
+  let netProcessed = { total: 0, ok: 0 };
+  const netBridge = new NetBridge({
+    store: netStore,
+    fetch: fetchImpl,
+    onProcessed: (_id, ok) => {
+      netProcessed = { total: netProcessed.total + 1, ok: netProcessed.ok + (ok ? 1 : 0) };
+    },
+  });
 
   let lastDelivery: DeliverySnapshot | null = null;
 
@@ -92,6 +117,10 @@ export function createServer(deps: ServerDeps): WebhooksServer {
             listening: listener.isHealthy(),
             deliveries: counts,
             lastDelivery,
+            netBridge: {
+              listening: netListener.isHealthy(),
+              processed: netProcessed,
+            },
           })
         );
       })();
@@ -107,6 +136,9 @@ export function createServer(deps: ServerDeps): WebhooksServer {
     listener,
     store,
     dispatcher,
+    netListener,
+    netStore,
+    netBridge,
     async listen() {
       await listener.start((raw) => {
         const note = parseNotification(raw);
@@ -117,11 +149,19 @@ export function createServer(deps: ServerDeps): WebhooksServer {
         // Fire-and-forget; handle() swallows its own errors.
         void dispatcher.handle(note);
       });
+      // pg_net bridge: any notification means "something is pending" — drain()
+      // always processes everything queued, not just the notified row.
+      await netListener.start(() => {
+        void netBridge.drain();
+      });
+      // Poll-drain once at startup too: a request queued while the worker was
+      // down would otherwise wait forever for a NOTIFY that already fired.
+      void netBridge.drain();
       await new Promise<void>((resolve) => {
         httpServer.listen(config.port, () => {
           console.log(
             `[webhooks] Laetoli Data webhooks worker listening on :${config.port} ` +
-              `(LISTEN ${config.channel})`
+              `(LISTEN ${config.channel}, pg_net bridge LISTEN ${NET_QUEUE_CHANNEL})`
           );
           resolve();
         });
@@ -129,8 +169,10 @@ export function createServer(deps: ServerDeps): WebhooksServer {
     },
     async close() {
       await listener.stop();
+      await netListener.stop();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
       await store.close();
+      await netStore.close();
     },
   };
 }

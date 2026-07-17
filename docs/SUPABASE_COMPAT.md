@@ -23,6 +23,10 @@ Confirmed after the run (not just "no SQL errors" — actual functional checks):
   facilities/physicians) with correct calculated distances — the geo-search feature genuinely
   works end-to-end, not just "the CREATE FUNCTION statement didn't error"
 
+A separate pass audited **Kasuku** and **KasukuGames** (Laetoli's apps with real users, as
+opposed to THOS's pre-revenue prototype) for their actual Supabase feature usage — a 4th
+compatibility fix (`pg_net`) came from that audit, not from THOS. See **pg_net** below.
+
 ## The compatibility fixes
 
 | Migration | Fixes | What it does |
@@ -30,6 +34,7 @@ Confirmed after the run (not just "no SQL errors" — actual functional checks):
 | [`0013_supabase_compat_roles.sql`](../db/migrations/0013_supabase_compat_roles.sql) | `role "service_role" does not exist` (hit 15 of THOS's 57 files — the single largest failure category) | Creates `service_role` as a real second BYPASSRLS role alongside `laetoli_admin`, so `GRANT ... TO service_role` from ported Supabase SQL just works |
 | [`0014_supabase_compat_storage.sql`](../db/migrations/0014_supabase_compat_storage.sql) | `storage.buckets.id`, `storage.objects.bucket_id`, `storage.objects.name` don't exist (Laetoli Data's native columns are `buckets.name` as PK, `objects.bucket`, `objects.path`) | Adds the Supabase-named columns as compatibility columns (a trigger for `buckets.id`, `STORED GENERATED` mirrors for the other two — always in sync, can't drift). Native Laetoli Data storage code is untouched; it never reads/writes the new columns |
 | [`0015_supabase_compat_realtime.sql`](../db/migrations/0015_supabase_compat_realtime.sql) | `publication "supabase_realtime" does not exist` | Creates the publication so `ALTER PUBLICATION supabase_realtime ADD TABLE ...` doesn't error. **Read the caveat below — this one is schema-compatible only, not functionally complete.** |
+| [`0017_supabase_compat_pg_net.sql`](../db/migrations/0017_supabase_compat_pg_net.sql) | `function net.http_post(...) does not exist` (found in Kasuku's call/gift notification triggers) | Real `net.http_post()`/`net.http_get()` — queues the request (same async architecture as real pg_net) and the webhooks worker drains it. **Live-verified end-to-end** — see below. |
 
 ## The one honest gap: realtime
 
@@ -53,6 +58,40 @@ Treat any ported table's realtime feature as **schema-compatible, functionality 
 wired** until that trigger exists. This is a real architectural difference, not a bug — Laetoli
 Data's simpler LISTEN/NOTIFY approach is lighter-weight and Pi-friendly; it just isn't a drop-in
 publication consumer.
+
+## pg_net (Postgres → HTTP calls from a trigger)
+
+Found by testing **Kasuku's** real triggers (not THOS's) against this project: `notify_on_call()`
+and a gifts-notification trigger both do `SELECT net.http_post(url, body)` directly from SQL to
+invoke a push-notification Edge Function the instant a row is inserted — Supabase's `pg_net`
+extension. Real pg_net is itself asynchronous despite the trigger-call syntax looking synchronous
+— it queues the request and a background worker performs it, returning a bigint request id
+immediately.
+
+[`0017_supabase_compat_pg_net.sql`](../db/migrations/0017_supabase_compat_pg_net.sql) replicates
+that same real architecture rather than faking a simpler one: `net.http_post()`/`net.http_get()`
+INSERT into `net.http_request_queue` and return the new row's id — a ported trigger needs **zero**
+changes. The **webhooks worker** (`webhooks/src/netBridge.ts`) LISTENs for new queue rows on a
+dedicated channel (separate from the realtime/webhooks NOTIFY stream, even though it's the same
+deployable process — reused because it already has HTTP+retry infrastructure, not because the two
+concerns are the same thing), performs the actual HTTP call, and records the outcome in
+`net.http_response` — matching pg_net's real response-table shape.
+
+**Live-verified end-to-end (2026-07-17)**, not just unit-tested: a real trigger mirroring Kasuku's
+exact pattern was created on a fresh database, an INSERT fired it, and a real HTTP server outside
+the container received the actual POST with the correct JSON payload; `net.http_response` recorded
+`status_code: 200`. Two real bugs were caught and fixed only by this live test (unit tests with
+fake stores couldn't have found either):
+1. **Missing `GRANT USAGE ON SCHEMA net TO laetoli_webhooks`** — the worker could see the tables
+   existed but couldn't touch them (`permission denied for schema net`).
+2. **`INSERT ... ON CONFLICT DO UPDATE` requires `UPDATE` privilege**, not just `INSERT`, even
+   when no conflict actually occurs — Postgres checks this at plan time for the whole statement.
+3. A genuine design bug: `http_response.id` was defined `REFERENCES http_request_queue(id) ON
+   DELETE CASCADE`. The worker's own intentional `DELETE FROM http_request_queue` (once a request
+   is processed) was cascading and silently deleting the response row it had just inserted —
+   losing every outcome. Fixed by removing the foreign key entirely: the two tables are
+   independent lifecycles (queue = transient pending work, response = the permanent record), not
+   a parent/child relationship that should cascade.
 
 ## Reproducing this test yourself
 
