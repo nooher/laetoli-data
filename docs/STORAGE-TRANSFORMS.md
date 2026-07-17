@@ -124,6 +124,41 @@ const thumb = `${data.signedUrl}&width=800&format=webp`;
 `buildTransformQuery(opts)` is also exported if you want to assemble the query
 string yourself.
 
+## Supabase URL compat — a ported app needs ZERO changes
+
+An app that already talks to real Supabase Storage typically hardcodes (or
+string-replaces its way into) two path shapes:
+
+```
+{URL}/storage/v1/object/public/{bucket}/{path}
+{URL}/storage/v1/render/image/public/{bucket}/{path}?width=&height=&resize=&quality=
+```
+
+...which is a **different path** for "plain object" vs. "transformed render" —
+unlike this service's single `/object/:bucket/*` route (transform-or-not is
+just query params on the same path). To avoid making every ported app rewrite
+its URL-building code, the storage service accepts **both Supabase paths as
+aliases** onto the exact same handler (Caddy strips the leading `/storage`, so
+what actually reaches the service is `/v1/...`):
+
+```
+GET /v1/object/public/:bucket/*         → identical to /object/:bucket/*
+GET /v1/render/image/public/:bucket/*   → identical to /object/:bucket/*
+```
+
+Both enforce the same public/private auth rules and the same param parsing —
+they're the same code path, not a second implementation to keep in sync.
+
+**Verified live** against KasukuGames' actual, unmodified `api/invite.ts`
+logic (a real bug this session's audit found: its `ogSized()` helper
+string-replaces `/storage/v1/object/public/` → `/storage/v1/render/image/public/`
+and appends `?width=600&height=600&resize=cover&quality=75` to keep WhatsApp
+link-preview images small). Run verbatim against a real running storage
+service: a 1200×1200 PNG uploaded, the plain-object alias served the original
+7310 bytes unchanged, and the render/image alias — hit with the *exact* URL
+`ogSized()` computes — returned a real, freshly-sharp-encoded 600×600 PNG
+(2584 bytes). No app-side change needed to port this feature to laetoli-data.
+
 ## Deployment note
 
 `sharp` ships prebuilt native binaries (incl. linux-musl x64 + arm64), so the

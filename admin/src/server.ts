@@ -16,7 +16,11 @@ function main(): void {
   }
 
   const db = createPgDb(config);
-  const app = createApp({ db, adminApiKey: config.adminApiKey });
+  const app = createApp({
+    db,
+    adminApiKey: config.adminApiKey,
+    authInternalUrl: config.authInternalUrl,
+  });
 
   const server = app.listen(config.port, () => {
     console.log(

@@ -276,7 +276,7 @@ export function createApp(deps: AppDeps): Express {
     }
   );
 
-  app.get('/object/:bucket/*', async (req, res, next) => {
+  const getObject = async (req: Request, res: Response, next: express.NextFunction) => {
     try {
       const t = parseTransform(req.query as Record<string, unknown>);
       if (t.error) {
@@ -296,7 +296,21 @@ export function createApp(deps: AppDeps): Express {
     } catch (e) {
       next(e);
     }
-  });
+  };
+
+  app.get('/object/:bucket/*', getObject);
+
+  // ---- Supabase Storage URL compat -----------------------------------------
+  // A ported app's hardcoded URLs (built against a real Supabase project, e.g.
+  // `{URL}/storage/v1/object/public/...` and the string-replaced
+  // `.../storage/v1/render/image/public/...?width=&height=&resize=&quality=`
+  // convention some apps use for on-the-fly thumbnails) keep working with ZERO
+  // app-side changes: both are aliases onto the exact same handler as
+  // `/object/:bucket/*` above — this service has no separate "render" endpoint,
+  // transform params are just query params on the one object route, so both
+  // Supabase paths naturally converge here. See docs/STORAGE-TRANSFORMS.md.
+  app.get('/v1/object/public/:bucket/*', getObject);
+  app.get('/v1/render/image/public/:bucket/*', getObject);
 
   app.delete('/object/:bucket/*', async (req, res, next) => {
     try {
@@ -363,5 +377,7 @@ function routeLabel(method: string, path: string): string {
   if (path.startsWith('/sign/')) return '/sign/:bucket/*';
   if (path.startsWith('/signed/')) return '/signed/:bucket/*';
   if (path.startsWith('/object/')) return `${method} /object/:bucket/*`;
+  if (path.startsWith('/v1/object/public/')) return 'GET /v1/object/public/:bucket/* (compat)';
+  if (path.startsWith('/v1/render/image/public/')) return 'GET /v1/render/image/public/:bucket/* (compat)';
   return 'other';
 }

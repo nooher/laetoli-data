@@ -58,6 +58,13 @@ export interface AdminUser {
   username: string | null;
   is_anonymous: boolean;
   created_at: string;
+  suspended_at: string | null;
+}
+
+/** Result of a suspend/unsuspend call — null when the user id doesn't exist. */
+export interface SuspendResult {
+  id: string;
+  suspended_at: string | null;
 }
 
 export interface BucketInfo {
@@ -188,6 +195,12 @@ export interface Db {
   listRoles(): Promise<RoleInfo[]>;
   listAuthUsers(limit: number, offset: number): Promise<AdminUser[]>;
   deleteAuthUser(id: string): Promise<boolean>;
+  /** Set/clear auth.users.suspended_at. Returns null when the user id doesn't exist. */
+  setUserSuspended(id: string, suspended: boolean): Promise<SuspendResult | null>;
+  /** Revoke every still-active refresh token for a user. Returns the count revoked. */
+  revokeUserSessions(id: string): Promise<number>;
+  /** Delete every enrolled MFA factor for a user (locks them out of nothing — it REMOVES the 2nd-factor requirement). Returns the count deleted. */
+  resetUserMfa(id: string): Promise<number>;
   listBuckets(): Promise<BucketInfo[]>;
   listObjects(bucket: string | undefined, limit: number): Promise<ObjectInfo[]>;
   stats(): Promise<Stats>;
@@ -553,7 +566,7 @@ export function createPgDb(config: AdminConfig): Db {
     async listAuthUsers(limit, offset) {
       // NEVER select password_hash.
       const { rows } = await pool.query<AdminUser>(
-        `SELECT id, username, is_anonymous, created_at
+        `SELECT id, username, is_anonymous, created_at, suspended_at
            FROM auth.users
           ORDER BY created_at DESC
           LIMIT $1 OFFSET $2`,
@@ -565,6 +578,30 @@ export function createPgDb(config: AdminConfig): Db {
     async deleteAuthUser(id) {
       const res = await pool.query(`DELETE FROM auth.users WHERE id = $1`, [id]);
       return (res.rowCount ?? 0) > 0;
+    },
+
+    async setUserSuspended(id, suspended) {
+      const { rows } = await pool.query<SuspendResult>(
+        `UPDATE auth.users SET suspended_at = ${suspended ? 'now()' : 'NULL'}
+          WHERE id = $1
+        RETURNING id, suspended_at`,
+        [id]
+      );
+      return rows[0] ?? null;
+    },
+
+    async revokeUserSessions(id) {
+      const res = await pool.query(
+        `UPDATE auth.refresh_tokens SET revoked_at = now()
+          WHERE user_id = $1 AND revoked_at IS NULL`,
+        [id]
+      );
+      return res.rowCount ?? 0;
+    },
+
+    async resetUserMfa(id) {
+      const res = await pool.query(`DELETE FROM auth.mfa_factors WHERE user_id = $1`, [id]);
+      return res.rowCount ?? 0;
     },
 
     async listBuckets() {

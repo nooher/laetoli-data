@@ -43,7 +43,7 @@ client →│ /rest/* → PostgREST  /auth/* → Auth  /storage/* → Storage  /
 - `client/` — `@laetoli/data` SDK (+ tests)
 - `cli/` — `laetoli-data` CLI (init / up / migrate / backup / …)
 - `examples/` — **`daftari/`** the worked example (auth + RLS + CRUD + storage + realtime) · `poc.mjs` the smoke test
-- `docs/` — `EXAMPLE.md` · `RUNBOOK.md` · `PI_SETUP.md` · `ROTATION.md` · `PITR.md` · `OBSERVABILITY.md` · `STORAGE-TRANSFORMS.md` · `SEARCH.md` · `VECTORS.md` · `WEBHOOKS.md` · `SCHEDULER.md` (root: `DEPLOY.md` · `SECURITY.md` · `RASPBERRY_PI.md`)
+- `docs/` — `EXAMPLE.md` · `RUNBOOK.md` · `PI_SETUP.md` · `ROTATION.md` · `PITR.md` · `OBSERVABILITY.md` · `STORAGE-TRANSFORMS.md` · `SEARCH.md` · `VECTORS.md` · `GEO.md` · `MFA.md` · `OAUTH.md` · `MAGIC_LINK.md` · `ADMIN_USER_OPS.md` · `SUPABASE_COMPAT.md` · `WEBHOOKS.md` · `SCHEDULER.md` (root: `DEPLOY.md` · `SECURITY.md` · `RASPBERRY_PI.md`)
 
 ## Quick start
 ```bash
@@ -91,7 +91,7 @@ Operate, secure, and extend a node:
 - [`SECURITY.md`](SECURITY.md) — threat model, CORS lockdown, rate limiting, RLS audit, the service-role key
 - [`docs/ROTATION.md`](docs/ROTATION.md) — rotating `JWT_SECRET`, DB passwords, and the `ADMIN_API_KEY`
 - [`DEPLOY.md`](DEPLOY.md) — production VPS deploy · [`docs/PI_SETUP.md`](docs/PI_SETUP.md) + [`RASPBERRY_PI.md`](RASPBERRY_PI.md) — edge/Pi
-- [`docs/PITR.md`](docs/PITR.md) · [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) · [`docs/STORAGE-TRANSFORMS.md`](docs/STORAGE-TRANSFORMS.md) · [`docs/SEARCH.md`](docs/SEARCH.md) · [`docs/VECTORS.md`](docs/VECTORS.md) · [`docs/WEBHOOKS.md`](docs/WEBHOOKS.md) · [`docs/SCHEDULER.md`](docs/SCHEDULER.md)
+- [`docs/PITR.md`](docs/PITR.md) · [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) · [`docs/STORAGE-TRANSFORMS.md`](docs/STORAGE-TRANSFORMS.md) · [`docs/SEARCH.md`](docs/SEARCH.md) · [`docs/VECTORS.md`](docs/VECTORS.md) · [`docs/GEO.md`](docs/GEO.md) · [`docs/MFA.md`](docs/MFA.md) · [`docs/OAUTH.md`](docs/OAUTH.md) · [`docs/MAGIC_LINK.md`](docs/MAGIC_LINK.md) · [`docs/ADMIN_USER_OPS.md`](docs/ADMIN_USER_OPS.md) · [`docs/SUPABASE_COMPAT.md`](docs/SUPABASE_COMPAT.md) · [`docs/WEBHOOKS.md`](docs/WEBHOOKS.md) · [`docs/SCHEDULER.md`](docs/SCHEDULER.md)
 
 ## CLI (`laetoli-data`)
 | Command | Does |

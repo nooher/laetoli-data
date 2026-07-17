@@ -35,6 +35,9 @@ export interface FakeDb extends Db {
   tables: Map<string, FakeTable>;
   /** Make the next query() call throw a pg-style error (for the console test). */
   failNextQuery: (message: string, code?: string) => void;
+  /** Lightweight fake state for the user-ops tests. */
+  refreshTokenCounts: Map<string, number>;
+  mfaFactorCounts: Map<string, number>;
 }
 
 function key(schema: string, name: string): string {
@@ -69,9 +72,15 @@ export function createFakeDb(): FakeDb {
 
   // auth.users (NEVER expose password_hash through the admin user listing)
   const authUsers: AdminUser[] = [
-    { id: 'u1', username: 'neema', is_anonymous: false, created_at: '2026-01-01T00:00:00Z' },
-    { id: 'u2', username: null, is_anonymous: true, created_at: '2026-01-02T00:00:00Z' },
+    { id: 'u1', username: 'neema', is_anonymous: false, created_at: '2026-01-01T00:00:00Z', suspended_at: null },
+    { id: 'u2', username: null, is_anonymous: true, created_at: '2026-01-02T00:00:00Z', suspended_at: null },
   ];
+
+  // Lightweight fake state for revoke-sessions / reset-mfa counting (not a
+  // full row model — the real Db operates on auth.refresh_tokens/mfa_factors
+  // directly; these tests only need "how many did this affect").
+  const refreshTokenCounts = new Map<string, number>([['u1', 2]]);
+  const mfaFactorCounts = new Map<string, number>([['u1', 1]]);
 
   const buckets: BucketInfo[] = [
     { name: 'avatars', public: true, created_at: '2026-01-01T00:00:00Z' },
@@ -103,6 +112,8 @@ export function createFakeDb(): FakeDb {
 
   return {
     tables,
+    refreshTokenCounts,
+    mfaFactorCounts,
 
     failNextQuery(message, code) {
       pendingError = { message, code };
@@ -249,6 +260,25 @@ export function createFakeDb(): FakeDb {
       if (i === -1) return false;
       authUsers.splice(i, 1);
       return true;
+    },
+
+    async setUserSuspended(id, suspended) {
+      const u = authUsers.find((x) => x.id === id);
+      if (!u) return null;
+      u.suspended_at = suspended ? new Date().toISOString() : null;
+      return { id: u.id, suspended_at: u.suspended_at };
+    },
+
+    async revokeUserSessions(id) {
+      const n = refreshTokenCounts.get(id) ?? 0;
+      refreshTokenCounts.set(id, 0);
+      return n;
+    },
+
+    async resetUserMfa(id) {
+      const n = mfaFactorCounts.get(id) ?? 0;
+      mfaFactorCounts.set(id, 0);
+      return n;
     },
 
     async listBuckets(): Promise<BucketInfo[]> {

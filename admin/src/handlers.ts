@@ -19,6 +19,10 @@ import { mintKey } from './apikeys.js';
 
 export interface HandlerDeps {
   db: Db;
+  /** Internal base URL of the auth service — used by handleInviteUser. */
+  authInternalUrl?: string;
+  /** Injectable fetch (tests only; defaults to global fetch). */
+  authFetch?: typeof fetch;
 }
 
 export interface HandlerResult {
@@ -251,6 +255,102 @@ export async function handleDeleteAuthUser(
     return { status: 404, body: err('Mtumiaji hapatikani. (User not found.)') };
   }
   return { status: 200, body: { deleted: true, id } };
+}
+
+// -- User ops (invite / suspend / revoke-sessions / reset-mfa) ----------------
+// Mirrors the Supabase Admin API surface (`supabase.auth.admin.*`) that apps
+// like Kasuku's Edge Functions call. Gated the same way as every other admin
+// route (ADMIN_API_KEY, applied in app.ts before these ever run).
+
+const DEFAULT_AUTH_INTERNAL_URL = 'http://auth:9999';
+
+/**
+ * Invite a user by email. This is NOT a separate invite system — it reuses
+ * the auth service's own magic-link flow (find-or-create the user, email a
+ * single-use sign-in link) so there's exactly one place that knows how to
+ * mint/deliver auth tokens, not two. The only difference from self-service
+ * signInWithOtp is who triggered it: an admin, not the user themselves.
+ */
+export async function handleInviteUser(
+  deps: HandlerDeps,
+  body: unknown
+): Promise<HandlerResult> {
+  if (!isPlainObject(body) || typeof body.email !== 'string' || body.email.trim() === '') {
+    return { status: 400, body: err('`email` inahitajika. (`email` is required.)') };
+  }
+  const authUrl = deps.authInternalUrl ?? DEFAULT_AUTH_INTERNAL_URL;
+  const fetchImpl = deps.authFetch ?? fetch;
+
+  let res: Response;
+  try {
+    res = await fetchImpl(`${authUrl}/magiclink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: body.email,
+        redirect_to: typeof body.redirect_to === 'string' ? body.redirect_to : undefined,
+      }),
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { status: 502, body: err(`Imeshindwa kuwasiliana na huduma ya auth: ${message}`) };
+  }
+
+  const parsed = await res.json().catch(() => null);
+  if (!res.ok) {
+    // Surface the auth service's own validation error as-is (e.g. bad email).
+    return { status: res.status, body: parsed ?? err('Imeshindwa kualika mtumiaji.') };
+  }
+  return { status: 200, body: { invited: true, email: body.email } };
+}
+
+/** POST /users/:id/suspend { suspend?: boolean } — default true. Suspending ALSO revokes existing sessions (immediate lockout, not just a block on future logins). */
+export async function handleSuspendUser(
+  deps: HandlerDeps,
+  id: string,
+  body: unknown
+): Promise<HandlerResult> {
+  if (typeof id !== 'string' || id.trim() === '') {
+    return { status: 400, body: err('Kitambulisho cha mtumiaji kinahitajika. (User id required.)') };
+  }
+  const suspend = !(isPlainObject(body) && body.suspend === false);
+
+  const result = await deps.db.setUserSuspended(id, suspend);
+  if (!result) {
+    return { status: 404, body: err('Mtumiaji hapatikani. (User not found.)') };
+  }
+
+  const sessionsRevoked = suspend ? await deps.db.revokeUserSessions(id) : 0;
+  return {
+    status: 200,
+    body: {
+      id: result.id,
+      suspended: suspend,
+      suspended_at: result.suspended_at,
+      sessions_revoked: sessionsRevoked,
+    },
+  };
+}
+
+/** POST /users/:id/revoke-sessions — force re-login everywhere (e.g. suspected session theft, no ban needed). */
+export async function handleRevokeSessions(
+  deps: HandlerDeps,
+  id: string
+): Promise<HandlerResult> {
+  if (typeof id !== 'string' || id.trim() === '') {
+    return { status: 400, body: err('Kitambulisho cha mtumiaji kinahitajika. (User id required.)') };
+  }
+  const sessionsRevoked = await deps.db.revokeUserSessions(id);
+  return { status: 200, body: { id, sessions_revoked: sessionsRevoked } };
+}
+
+/** POST /users/:id/reset-mfa — remove all enrolled TOTP factors (e.g. lost authenticator device). The user re-enrolls after logging back in. */
+export async function handleResetMfa(deps: HandlerDeps, id: string): Promise<HandlerResult> {
+  if (typeof id !== 'string' || id.trim() === '') {
+    return { status: 400, body: err('Kitambulisho cha mtumiaji kinahitajika. (User id required.)') };
+  }
+  const factorsRemoved = await deps.db.resetUserMfa(id);
+  return { status: 200, body: { id, factors_removed: factorsRemoved } };
 }
 
 export async function handleBuckets(deps: HandlerDeps): Promise<HandlerResult> {

@@ -31,4 +31,11 @@ describe('loadConfig', () => {
     const c = loadConfig({ ADMIN_API_KEY: GOOD_KEY, ADMIN_STATEMENT_TIMEOUT_MS: '0' });
     expect(c.statementTimeoutMs).toBe(15000);
   });
+
+  it('defaults authInternalUrl to the in-compose auth service, overridable and trailing-slash-stripped', () => {
+    const c = loadConfig({ ADMIN_API_KEY: GOOD_KEY });
+    expect(c.authInternalUrl).toBe('http://auth:9999');
+    const c2 = loadConfig({ ADMIN_API_KEY: GOOD_KEY, AUTH_INTERNAL_URL: 'http://auth:9999/' });
+    expect(c2.authInternalUrl).toBe('http://auth:9999');
+  });
 });

@@ -21,6 +21,8 @@ export interface AdminConfig {
   };
   /** Per-statement timeout (ms) applied to the SQL console. */
   statementTimeoutMs: number;
+  /** Internal URL of the auth service — used ONLY to trigger a user-invite (reuses its magic-link flow). */
+  authInternalUrl: string;
 }
 
 /**
@@ -69,5 +71,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AdminConfig {
       password: env.PGPASSWORD ?? env.POSTGRES_PASSWORD ?? '',
       database: env.PGDATABASE ?? env.POSTGRES_DB ?? 'laetoli',
     },
+    authInternalUrl: (env.AUTH_INTERNAL_URL?.trim() || 'http://auth:9999').replace(/\/+$/, ''),
   };
 }

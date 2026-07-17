@@ -206,9 +206,15 @@ services:
       PGUSER: laetoli_admin_login
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB}
+      # POST /users/invite proxies to the auth service's own magic-link flow —
+      # default matches this compose network's service name, override only if
+      # auth is reachable elsewhere.
+      AUTH_INTERNAL_URL: http://auth:9999
     depends_on:
       db:
         condition: service_healthy
+      auth:
+        condition: service_started
     expose:
       - "9996"
 

@@ -15,6 +15,10 @@ import {
   handleRoles,
   handleAuthUsers,
   handleDeleteAuthUser,
+  handleInviteUser,
+  handleSuspendUser,
+  handleRevokeSessions,
+  handleResetMfa,
   handleBuckets,
   handleObjects,
   handleStats,
@@ -31,6 +35,10 @@ import {
 export interface AppDeps {
   db: Db;
   adminApiKey: string;
+  /** Internal base URL of the auth service — used by POST /users/invite. */
+  authInternalUrl?: string;
+  /** Injectable fetch (tests only; defaults to global fetch). */
+  authFetch?: typeof fetch;
 }
 
 export function createApp(deps: AppDeps): Express {
@@ -39,7 +47,11 @@ export function createApp(deps: AppDeps): Express {
   // SQL console payloads can be larger than auth bodies; allow up to 1 MB.
   app.use(express.json({ limit: '1mb' }));
 
-  const handlerDeps: HandlerDeps = { db: deps.db };
+  const handlerDeps: HandlerDeps = {
+    db: deps.db,
+    authInternalUrl: deps.authInternalUrl,
+    authFetch: deps.authFetch,
+  };
 
   const send = (res: Response, r: { status: number; body: unknown }) =>
     res.status(r.status).json(r.body);
@@ -130,6 +142,41 @@ export function createApp(deps: AppDeps): Express {
   app.delete('/auth/users/:id', async (req, res, next) => {
     try {
       send(res, await handleDeleteAuthUser(handlerDeps, req.params.id));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---- User ops (invite / suspend / revoke-sessions / reset-mfa) ----------
+  // Mirrors the Supabase Admin API surface (auth.admin.*) that apps like
+  // Kasuku's Edge Functions call.
+  app.post('/users/invite', async (req, res, next) => {
+    try {
+      send(res, await handleInviteUser(handlerDeps, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.post('/users/:id/suspend', async (req, res, next) => {
+    try {
+      send(res, await handleSuspendUser(handlerDeps, req.params.id, req.body ?? {}));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.post('/users/:id/revoke-sessions', async (req, res, next) => {
+    try {
+      send(res, await handleRevokeSessions(handlerDeps, req.params.id));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  app.post('/users/:id/reset-mfa', async (req, res, next) => {
+    try {
+      send(res, await handleResetMfa(handlerDeps, req.params.id));
     } catch (e) {
       next(e);
     }
