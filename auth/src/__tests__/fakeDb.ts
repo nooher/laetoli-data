@@ -66,7 +66,7 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
       return rows.find((r) => r.phone === phone) ?? null;
     },
 
-    async createUser({ username, passwordHash, email }) {
+    async createUser({ username, passwordHash, email, metadata }) {
       if (pendingUniqueViolation) {
         pendingUniqueViolation = false;
         const e = new Error('duplicate key') as Error & { code: string };
@@ -83,6 +83,7 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
         phone: null,
         created_at: new Date().toISOString(),
         suspended_at: null,
+        raw_user_meta_data: metadata ?? {},
       };
       rows.push(row);
       return row;
@@ -99,6 +100,7 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
         phone: null,
         created_at: new Date().toISOString(),
         suspended_at: null,
+        raw_user_meta_data: {},
       };
       rows.push(row);
       return row;
@@ -117,6 +119,7 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
         phone,
         created_at: new Date().toISOString(),
         suspended_at: null,
+        raw_user_meta_data: {},
       };
       rows.push(row);
       return row;
@@ -135,6 +138,7 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
         phone: null,
         created_at: new Date().toISOString(),
         suspended_at: null,
+        raw_user_meta_data: {},
       };
       rows.push(row);
       return row;
@@ -365,6 +369,7 @@ export function createFakeDb(seed: UserRow[] = []): Db & {
         phone: null,
         created_at: new Date().toISOString(),
         suspended_at: null,
+        raw_user_meta_data: {},
       };
       rows.push(row);
       return row;

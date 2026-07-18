@@ -3,11 +3,18 @@ import type {
   AuthStateChangeCallback,
   Credentials,
   LaetoliUser,
+  MfaChallengeResponse,
+  MfaEnrollResponse,
+  MfaListFactorsResponse,
+  MfaUnenrollResponse,
+  MfaVerifyResponse,
   OAuthProvider,
   OAuthResponse,
   OtpResponse,
   PostgrestError,
   Session,
+  SessionResponse,
+  SignUpOptions,
   TokenStorage,
 } from './types';
 
@@ -26,10 +33,13 @@ interface AuthCtx {
 export class AuthClient {
   private listeners = new Set<AuthStateChangeCallback>();
   private currentToken: string | null;
+  /** `auth.mfa.*` — matches Supabase's nested TOTP-enrollment client shape. */
+  readonly mfa: MfaClient;
 
   constructor(private readonly ctx: AuthCtx) {
     this.currentToken = ctx.storage.getItem(ctx.storageKey);
     this.detectSessionInUrl();
+    this.mfa = new MfaClient(ctx, () => this.currentToken);
   }
 
   /**
@@ -98,16 +108,38 @@ export class AuthClient {
     return this.currentToken;
   }
 
-  async signUp(creds: Credentials): Promise<AuthResponse> {
-    return this.post('/signup', creds, 'SIGNED_IN');
+  /**
+   * Accepts EITHER `{username, password}` (native) or Supabase's real
+   * `{email, password, options: {data}}` shape — a ported app's signUp()
+   * call needs no change. `options.data` becomes `user_metadata`, readable
+   * back via `getUser()`/`getSession()` and by a ported `handle_new_user()`-
+   * style Postgres trigger reading `auth.users.raw_user_meta_data`.
+   */
+  async signUp(creds: Credentials & SignUpOptions): Promise<AuthResponse> {
+    const { username, email } = resolveIdentity(creds);
+    return this.post(
+      '/signup',
+      { username, password: creds.password, email, metadata: creds.options?.data },
+      'SIGNED_IN',
+    );
   }
 
+  /** Accepts EITHER `{username, password}` or `{email, password}` — see signUp(). */
   async signInWithPassword(creds: Credentials): Promise<AuthResponse> {
-    return this.post('/token', creds, 'SIGNED_IN');
+    const { username } = resolveIdentity(creds);
+    return this.post('/token', { username, password: creds.password }, 'SIGNED_IN');
   }
 
   async signInAnonymously(): Promise<AuthResponse> {
     return this.post('/anonymous', {}, 'SIGNED_IN');
+  }
+
+  /**
+   * Returns the current session from local state — no network call, matching
+   * supabase-js's getSession() (which reads its local storage first too).
+   */
+  async getSession(): Promise<SessionResponse> {
+    return { data: { session: this.sessionFromToken(this.currentToken) }, error: null };
   }
 
   /** Fetch the current user from the auth service using the stored token. */
@@ -333,4 +365,91 @@ function toErr(parsed: unknown, res: Response): PostgrestError {
 
 function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** Resolve a `Credentials` union into the wire `{username, email?}` laetoli-data expects. */
+function resolveIdentity(creds: Credentials): { username: string; email?: string } {
+  if ('email' in creds && creds.email) {
+    return { username: usernameFromEmail(creds.email), email: creds.email };
+  }
+  return { username: (creds as { username: string }).username };
+}
+
+/**
+ * Deterministically derives a valid laetoli-data username from an email —
+ * the SAME email always maps to the SAME username, so signup and every
+ * later login (both going through this function) resolve to the same
+ * account. laetoli-data's server-side rule: 3-32 chars, starts with a
+ * letter/digit, only [a-zA-Z0-9._-] after that.
+ */
+function usernameFromEmail(email: string): string {
+  let u = email.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '_');
+  if (!/^[a-z0-9]/.test(u)) u = `u${u}`;
+  if (u.length < 3) u = u.padEnd(3, '0');
+  if (u.length > 32) u = u.slice(0, 32);
+  return u;
+}
+
+/**
+ * `auth.mfa.*` — self-service TOTP enrollment, matching Supabase's nested
+ * client shape (`supabase.auth.mfa.enroll()` etc). Thin wrapper over the
+ * auth service's `/factors*` REST endpoints (see docs/MFA.md). Enrollment
+ * and management only — no login-time step-up, same scope as the server.
+ */
+class MfaClient {
+  constructor(
+    private readonly ctx: AuthCtx,
+    private readonly token: () => string | null,
+  ) {}
+
+  private authHeaders(): Record<string, string> {
+    const t = this.token();
+    return { ...this.ctx.baseHeaders(), ...(t ? { Authorization: `Bearer ${t}` } : {}) };
+  }
+
+  async enroll(input: { friendlyName?: string } = {}): Promise<MfaEnrollResponse> {
+    return this.request('POST', '/factors', { friendly_name: input.friendlyName });
+  }
+
+  async listFactors(): Promise<MfaListFactorsResponse> {
+    return this.request('GET', '/factors');
+  }
+
+  async challenge(input: { factorId: string }): Promise<MfaChallengeResponse> {
+    return this.request('POST', `/factors/${encodeURIComponent(input.factorId)}/challenge`);
+  }
+
+  async verify(input: { factorId: string; challengeId: string; code: string }): Promise<MfaVerifyResponse> {
+    return this.request('POST', `/factors/${encodeURIComponent(input.factorId)}/verify`, {
+      challenge_id: input.challengeId,
+      code: input.code,
+    });
+  }
+
+  async unenroll(input: { factorId: string }): Promise<MfaUnenrollResponse> {
+    return this.request('DELETE', `/factors/${encodeURIComponent(input.factorId)}`);
+  }
+
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<{ data: T | null; error: PostgrestError | null }> {
+    let res: Response;
+    try {
+      res = await this.ctx.fetch(`${this.ctx.authUrl}${path}`, {
+        method,
+        headers: {
+          ...this.authHeaders(),
+          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (e) {
+      return { data: null, error: { message: msg(e), code: 'fetch_error' } };
+    }
+    const parsed = await safeJson(res);
+    if (!res.ok) return { data: null, error: toErr(parsed, res) };
+    return { data: parsed as T, error: null };
+  }
 }

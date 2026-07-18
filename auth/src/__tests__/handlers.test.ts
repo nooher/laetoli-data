@@ -35,6 +35,36 @@ describe('handleSignup', () => {
     expect(r.status).toBe(409);
   });
 
+  it('stores caller-supplied metadata and returns it as user_metadata (Supabase-compat signUp options.data)', async () => {
+    const d = deps();
+    const r = await handleSignup(d, {
+      username: 'asha',
+      password: 'siri1234',
+      metadata: { full_name: 'Asha Juma', role: 'citizen', pref_lang: 'sw' },
+    });
+    expect(r.status).toBe(201);
+    const body = r.body as any;
+    expect(body.user.user_metadata).toEqual({ full_name: 'Asha Juma', role: 'citizen', pref_lang: 'sw' });
+
+    const db = d.db as ReturnType<typeof createFakeDb>;
+    expect(db.rows[0].raw_user_meta_data).toEqual({ full_name: 'Asha Juma', role: 'citizen', pref_lang: 'sw' });
+  });
+
+  it('signup with no metadata defaults to an empty object, not undefined/null', async () => {
+    const d = deps();
+    const r = await handleSignup(d, { username: 'asha', password: 'siri1234' });
+    const body = r.body as any;
+    expect(body.user.user_metadata).toEqual({});
+  });
+
+  it('ignores a non-object metadata value rather than erroring (e.g. a string or array)', async () => {
+    const d = deps();
+    const r = await handleSignup(d, { username: 'asha', password: 'siri1234', metadata: 'not-an-object' });
+    expect(r.status).toBe(201);
+    const body = r.body as any;
+    expect(body.user.user_metadata).toEqual({});
+  });
+
   it('concurrent unique-violation also → 409', async () => {
     const db = createFakeDb();
     const d: HandlerDeps = { db, jwtSecret: SECRET, jwtExpiry: 3600 };

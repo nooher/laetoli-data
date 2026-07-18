@@ -178,13 +178,17 @@ function isUniqueViolation(e: unknown): boolean {
 
 export async function handleSignup(
   deps: HandlerDeps,
-  input: { username?: unknown; password?: unknown; email?: unknown },
+  input: { username?: unknown; password?: unknown; email?: unknown; metadata?: unknown },
   userAgent?: string | null
 ): Promise<HandlerResult> {
   const u = validateUsername(input.username);
   if (!u.ok) return { status: 400, body: err(u.error!) };
   const p = validatePassword(input.password);
   if (!p.ok) return { status: 400, body: err(p.error!) };
+  const metadata =
+    input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)
+      ? (input.metadata as Record<string, unknown>)
+      : undefined;
 
   // Email is OPTIONAL. Validate only when present.
   let email: string | null = null;
@@ -209,7 +213,7 @@ export async function handleSignup(
 
   let row;
   try {
-    row = await deps.db.createUser({ username, passwordHash, email });
+    row = await deps.db.createUser({ username, passwordHash, email, metadata });
   } catch (e) {
     if (isUniqueViolation(e)) {
       // Lost the race against a concurrent signup (username or email).

@@ -16,6 +16,8 @@ export interface UserRow {
   created_at: string;
   /** NULL = active. Set by an admin (admin service) to block new logins. */
   suspended_at: string | null;
+  /** Caller-supplied signup metadata (Supabase-compat name/shape). */
+  raw_user_meta_data: Record<string, unknown>;
 }
 
 /** Public user shape (NEVER includes password_hash). */
@@ -26,6 +28,7 @@ export interface PublicUser {
   email: string | null;
   email_verified: boolean;
   phone: string | null;
+  user_metadata: Record<string, unknown>;
 }
 
 export function toPublicUser(row: UserRow): PublicUser {
@@ -36,6 +39,7 @@ export function toPublicUser(row: UserRow): PublicUser {
     email: row.email,
     email_verified: row.email_verified,
     phone: row.phone,
+    user_metadata: row.raw_user_meta_data,
   };
 }
 
@@ -117,6 +121,8 @@ export interface Db {
     username: string;
     passwordHash: string;
     email?: string | null;
+    /** Caller-supplied signup metadata (Supabase-compat signUp({options:{data}})). */
+    metadata?: Record<string, unknown>;
   }): Promise<UserRow>;
   createAnonymousUser(): Promise<UserRow>;
   /** Create (or fetch) a phone-only user for SMS-OTP login. */
@@ -228,7 +234,7 @@ export function createPgDb(config: AuthConfig): Db {
       });
 
   const SELECT_COLS =
-    'id, username, password_hash, is_anonymous, email, email_verified, phone, created_at, suspended_at';
+    'id, username, password_hash, is_anonymous, email, email_verified, phone, created_at, suspended_at, raw_user_meta_data';
   const REFRESH_COLS =
     'id, user_id, token_hash, family_id, expires_at, revoked_at, created_at, user_agent';
   const SINGLE_USE_COLS =
@@ -265,12 +271,12 @@ export function createPgDb(config: AuthConfig): Db {
       return rows[0] ?? null;
     },
 
-    async createUser({ username, passwordHash, email }) {
+    async createUser({ username, passwordHash, email, metadata }) {
       const { rows } = await pool.query<UserRow>(
-        `INSERT INTO auth.users (username, password_hash, is_anonymous, email)
-         VALUES ($1, $2, false, $3)
+        `INSERT INTO auth.users (username, password_hash, is_anonymous, email, raw_user_meta_data)
+         VALUES ($1, $2, false, $3, $4)
          RETURNING ${SELECT_COLS}`,
-        [username, passwordHash, email ?? null]
+        [username, passwordHash, email ?? null, JSON.stringify(metadata ?? {})]
       );
       return rows[0];
     },

@@ -320,5 +320,161 @@ describe('createClient validation', () => {
   });
 });
 
+describe('auth.signUp / signInWithPassword — email-based identity (Supabase-compat)', () => {
+  it('signUp({email, password}) derives a valid username and sends BOTH username + the real email', async () => {
+    const { fn, calls } = makeFetch([{ status: 201, json: { access_token: makeJwt({ sub: 'u1' }), user: { id: 'u1' } } }]);
+    const c = createClient(URL, { fetch: fn, storage: memoryStorage() });
+
+    await c.auth.signUp({ email: 'Asha.Juma+clinic@Medicalincs.com', password: 'siri1234' });
+    expect(calls[0].url).toBe(`${URL}/auth/signup`);
+    const body = calls[0].body as { username: string; email: string; password: string };
+    expect(body.email).toBe('Asha.Juma+clinic@Medicalincs.com');
+    expect(body.username).toMatch(/^[a-z0-9][a-z0-9._-]{2,31}$/); // matches the server's USERNAME_RE
+    expect(body.password).toBe('siri1234');
+  });
+
+  it('signUp options.data becomes the wire "metadata" field', async () => {
+    const { fn, calls } = makeFetch([{ status: 201, json: { access_token: makeJwt({ sub: 'u1' }), user: { id: 'u1' } } }]);
+    const c = createClient(URL, { fetch: fn, storage: memoryStorage() });
+
+    await c.auth.signUp({
+      email: 'asha@example.com',
+      password: 'siri1234',
+      options: { data: { full_name: 'Asha Juma', role: 'citizen' } },
+    });
+    const body = calls[0].body as { metadata: unknown };
+    expect(body.metadata).toEqual({ full_name: 'Asha Juma', role: 'citizen' });
+  });
+
+  it('the SAME email derives the SAME username on signUp and a later signInWithPassword', async () => {
+    const { fn, calls } = makeFetch([
+      { status: 201, json: { access_token: makeJwt({ sub: 'u1' }), user: { id: 'u1' } } },
+      { status: 200, json: { access_token: makeJwt({ sub: 'u1' }), user: { id: 'u1' } } },
+    ]);
+    const c = createClient(URL, { fetch: fn, storage: memoryStorage() });
+
+    await c.auth.signUp({ email: 'asha@example.com', password: 'siri1234' });
+    await c.auth.signInWithPassword({ email: 'asha@example.com', password: 'siri1234' });
+
+    const signUpBody = calls[0].body as { username: string };
+    const loginBody = calls[1].body as { username: string };
+    expect(loginBody.username).toBe(signUpBody.username);
+  });
+
+  it('still accepts the native {username, password} shape unchanged', async () => {
+    const { fn, calls } = makeFetch([{ status: 200, json: { access_token: makeJwt({ sub: 'u1' }), user: { id: 'u1' } } }]);
+    const c = createClient(URL, { fetch: fn, storage: memoryStorage() });
+
+    await c.auth.signInWithPassword({ username: 'asha_juma', password: 'siri1234' });
+    const body = calls[0].body as { username: string; email?: string };
+    expect(body.username).toBe('asha_juma');
+    expect(body.email).toBeUndefined();
+  });
+});
+
+describe('auth.getSession', () => {
+  it('returns null when not signed in, with no network call', async () => {
+    const { fn } = makeFetch();
+    const c = createClient(URL, baseOpts(fn));
+    const { data, error } = await c.auth.getSession();
+    expect(error).toBeNull();
+    expect(data.session).toBeNull();
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('returns the current session after signing in, with no network call', async () => {
+    const { fn, calls } = makeFetch([{ json: { access_token: makeJwt({ sub: 'u1', role: 'authenticated' }), user: { id: 'u1' } } }]);
+    const c = createClient(URL, baseOpts(fn));
+    await c.auth.signInWithPassword({ username: 'a', password: 'b' });
+
+    const before = calls.length;
+    const { data } = await c.auth.getSession();
+    expect(data.session?.user?.id).toBe('u1');
+    expect(calls.length).toBe(before); // getSession made no new request
+  });
+});
+
+describe('auth.mfa', () => {
+  it('enroll() POSTs /auth/factors with the bearer and friendly_name', async () => {
+    const token = makeJwt({ sub: 'u1', role: 'authenticated' });
+    const { fn, calls } = makeFetch([
+      { json: { access_token: token, user: { id: 'u1' } } },
+      { json: { id: 'f1', type: 'totp', totp: { qr_code: 'data:...', secret: 'ABC', uri: 'otpauth://...' } } },
+    ]);
+    const c = createClient(URL, baseOpts(fn));
+    await c.auth.signInWithPassword({ username: 'a', password: 'b' });
+
+    const { data, error } = await c.auth.mfa.enroll({ friendlyName: 'My phone' });
+    expect(error).toBeNull();
+    expect(data?.id).toBe('f1');
+    expect(calls[1].url).toBe(`${URL}/auth/factors`);
+    expect(calls[1].method).toBe('POST');
+    expect(calls[1].headers['Authorization']).toBe(`Bearer ${token}`);
+    expect(calls[1].body).toEqual({ friendly_name: 'My phone' });
+  });
+
+  it('listFactors() GETs /auth/factors and returns {totp, all}', async () => {
+    const token = makeJwt({ sub: 'u1', role: 'authenticated' });
+    const { fn, calls } = makeFetch([
+      { json: { access_token: token, user: { id: 'u1' } } },
+      { json: { totp: [{ id: 'f1', status: 'verified', friendly_name: null, created_at: 'x' }], all: [] } },
+    ]);
+    const c = createClient(URL, baseOpts(fn));
+    await c.auth.signInWithPassword({ username: 'a', password: 'b' });
+
+    const { data } = await c.auth.mfa.listFactors();
+    expect(data?.totp).toHaveLength(1);
+    expect(calls[1].method).toBe('GET');
+  });
+
+  it('challenge() then verify() hit the right factor-scoped endpoints', async () => {
+    const token = makeJwt({ sub: 'u1', role: 'authenticated' });
+    const { fn, calls } = makeFetch([
+      { json: { access_token: token, user: { id: 'u1' } } },
+      { json: { id: 'c1', expires_at: '2026-01-01T00:00:00Z' } },
+      { json: { id: 'f1', status: 'verified' } },
+    ]);
+    const c = createClient(URL, baseOpts(fn));
+    await c.auth.signInWithPassword({ username: 'a', password: 'b' });
+
+    const challenge = await c.auth.mfa.challenge({ factorId: 'f1' });
+    expect(calls[1].url).toBe(`${URL}/auth/factors/f1/challenge`);
+    expect(challenge.data?.id).toBe('c1');
+
+    const verify = await c.auth.mfa.verify({ factorId: 'f1', challengeId: 'c1', code: '123456' });
+    expect(calls[2].url).toBe(`${URL}/auth/factors/f1/verify`);
+    expect(calls[2].body).toEqual({ challenge_id: 'c1', code: '123456' });
+    expect(verify.data?.status).toBe('verified');
+  });
+
+  it('unenroll() DELETEs the factor', async () => {
+    const token = makeJwt({ sub: 'u1', role: 'authenticated' });
+    const { fn, calls } = makeFetch([
+      { json: { access_token: token, user: { id: 'u1' } } },
+      { json: { id: 'f1' } },
+    ]);
+    const c = createClient(URL, baseOpts(fn));
+    await c.auth.signInWithPassword({ username: 'a', password: 'b' });
+
+    const { data } = await c.auth.mfa.unenroll({ factorId: 'f1' });
+    expect(calls[1].method).toBe('DELETE');
+    expect(data?.id).toBe('f1');
+  });
+
+  it('surfaces a server error cleanly (e.g. 404 factor not found)', async () => {
+    const token = makeJwt({ sub: 'u1', role: 'authenticated' });
+    const { fn } = makeFetch([
+      { json: { access_token: token, user: { id: 'u1' } } },
+      { status: 404, json: { error: 'Factor haipatikani.' } },
+    ]);
+    const c = createClient(URL, baseOpts(fn));
+    await c.auth.signInWithPassword({ username: 'a', password: 'b' });
+
+    const { data, error } = await c.auth.mfa.challenge({ factorId: 'nope' });
+    expect(data).toBeNull();
+    expect(error?.message).toBe('Factor haipatikani.');
+  });
+});
+
 // keep vi import used even if a test is trimmed
 void vi;
