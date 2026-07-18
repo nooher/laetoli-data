@@ -28,10 +28,14 @@
 #   RATE_LIMIT_RPS / RATE_LIMIT_BURST.
 # =============================================================================
 
-{
-	# Let the rate_limit handler (when the plugin is built in) run early.
-	order rate_limit before basicauth
-}
+#{
+#	# Uncomment ALONGSIDE the "rate_limit {" block further down, and only on a
+#	# Caddy image that bundles the plugin. On the base caddy:2-alpine image,
+#	# Caddy refuses to start with this `order` directive present at all — it
+#	# names a directive the image doesn't know, even though nothing here
+#	# actually invokes rate_limit while the block below stays commented out.
+#	order rate_limit before basicauth
+#}
 
 {$CADDY_DOMAIN} {
 	encode zstd gzip
